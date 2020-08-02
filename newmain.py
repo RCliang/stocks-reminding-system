@@ -11,145 +11,167 @@ from jqdatasdk import *
 import time
 import numpy as np
 
-auth('13918216955','Keepgoing@2020')
-security_pools=['601318.XSHG','600036.XSHG','600115.XSHG','600600.XSHG','000063.XSHE',
-    '002049.XSHE','603517.XSHG','000977.XSHE','002230.XSHE','603000.XSHG',
-    '002714.XSHE','600196.XSHG','002405.XSHE','601021.XSHG']
-today=time.strftime('%Y-%m-%d',time.localtime(time.time()))
+auth('13918216955', 'Keepgoing@2020')
+security_pools = ['601318.XSHG', '600036.XSHG', '600115.XSHG', '600600.XSHG', '000063.XSHE',
+                  '002049.XSHE', '603517.XSHG', '000977.XSHE', '002230.XSHE', '603000.XSHG',
+                  '002714.XSHE', '600196.XSHG', '002405.XSHE', '601021.XSHG']
+today = time.strftime('%Y-%m-%d', time.localtime(time.time()))
+
 
 def get_industry_concept(security_pools):
     '''
     使用security_pools中的股票查询所属行业名称及代码
     '''
-    industry_list=pd.DataFrame(columns=['code','industry_name','industry_code'])
+    industry_list = pd.DataFrame(
+        columns=['code', 'industry_name', 'industry_code'])
     d = get_industry(security=security_pools, date=today)
-    for key,value in d.items():
-        temp=dict()
-        temp['code']=key
-        temp['industry_name']=value['sw_l1']['industry_name']
-        temp['industry_code']=value['sw_l1']['industry_code']
-        industry_list=industry_list.append(temp,ignore_index=True)
-    return industry_list
-def get_industry_index(industry_list):
-    temp=[]
-    for key,value in enumerate(industry_list['industry_code']):
-        df=finance.run_query(
-            query(
-                finance.SW1_DAILY_PRICE).filter(
-                finance.SW1_DAILY_PRICE.code==value).order_by(
-                finance.SW1_DAILY_PRICE.date.desc()).limit(1))
-        temp.append(df.loc[0,'change_pct'])
-    industry_list['ind_change']=temp
+    for key, value in d.items():
+        temp = dict()
+        temp['code'] = key
+        temp['industry_name'] = value['sw_l1']['industry_name']
+        temp['industry_code'] = value['sw_l1']['industry_code']
+        industry_list = industry_list.append(temp, ignore_index=True)
     return industry_list
 
+
+def get_industry_index(industry_list):
+    temp = []
+    for key, value in enumerate(industry_list['industry_code']):
+        df = finance.run_query(
+            query(
+                finance.SW1_DAILY_PRICE).filter(
+                finance.SW1_DAILY_PRICE.code == value).order_by(
+                finance.SW1_DAILY_PRICE.date.desc()).limit(1))
+        temp.append(df.loc[0, 'change_pct'])
+    industry_list['ind_change'] = temp
+    return industry_list
+
+
 def get_locked_info(industry_list):
-    temp=[]
-    df=get_locked_shares(security_pools, start_date=today, forward_count=100)
-    next_df=pd.merge(industry_list,df,how='left',on='code')
+    temp = []
+    df = get_locked_shares(security_pools, start_date=today, forward_count=100)
+    next_df = pd.merge(industry_list, df, how='left', on='code')
     return next_df
-def get_main_info(code,days):
-    df=get_price(code, count = days, end_date=today, frequency='daily', 
-    fields=['open', 'close', 'low', 'high', 'volume', 'money'])
-    df['next_rate']=df['close'].diff()
+
+
+def get_main_info(code, days):
+    df = get_price(code, count=days, end_date=today, frequency='daily',
+                   fields=['open', 'close', 'low', 'high', 'volume', 'money'])
+    df['next_rate'] = df['close'].diff()
     return df
+
+
 def MA_analyze(df):
-    SMA_5d=ta.SMA(df['close'].values,5)
-    SMA_10d=ta.SMA(df['close'].values,10)
-    SMA_20d=ta.SMA(df['close'].values,20)
-    close=np.array(df['close'])
-    if (close[-2]<SMA_5d[-2]) and (SMA_5d[-1]<close[-1]):
+    SMA_5d = ta.SMA(df['close'].values, 5)
+    SMA_10d = ta.SMA(df['close'].values, 10)
+    SMA_20d = ta.SMA(df['close'].values, 20)
+    close = np.array(df['close'])
+    if (close[-2] < SMA_5d[-2]) and (SMA_5d[-1] < close[-1]):
         return '收盘价向上突破5日均线，值得留意'
-    elif (SMA_5d[-2]<SMA_10d[-2]) and (SMA_5d[-1]>SMA_10d[-1]):
+    elif (SMA_5d[-2] < SMA_10d[-2]) and (SMA_5d[-1] > SMA_10d[-1]):
         return '5日均线向上突破10日均线，值得留意'
-    elif (SMA_5d[-2]<SMA_20d[-2]) and (SMA_5d[-1]>SMA_20d[-1]):
+    elif (SMA_5d[-2] < SMA_20d[-2]) and (SMA_5d[-1] > SMA_20d[-1]):
         return '5日均线向上突破20日均线，值得留意'
-    elif (close[-2]>SMA_5d[-2]) and (SMA_5d[-1]>close[-1]):
+    elif (close[-2] > SMA_5d[-2]) and (SMA_5d[-1] > close[-1]):
         return '收盘价向下突破5日均线，值得留意'
-    elif (SMA_5d[-2]>SMA_10d[-2]) and (SMA_5d[-1]<SMA_10d[-1]):
+    elif (SMA_5d[-2] > SMA_10d[-2]) and (SMA_5d[-1] < SMA_10d[-1]):
         return '5日均线向下突破10日均线，值得留意'
-    elif (SMA_5d[-2]>SMA_20d[-2]) and (SMA_5d[-1]<SMA_20d[-1]):
+    elif (SMA_5d[-2] > SMA_20d[-2]) and (SMA_5d[-1] < SMA_20d[-1]):
         return '5日均线向下突破20日均线，值得留意'
     else:
         return ''
 
+
 def MACD_analyze(df):
-    DIF, DEA, MACD = ta.MACD(np.array(df.close), fastperiod=12, slowperiod=26, signalperiod=9)
-    if (DIF[-1]>0) and (DEA[-1]>0) and (DIF[-1]>DEA[-1]) and (DIF[-2]<DEA[-2]):
+    DIF, DEA, MACD = ta.MACD(
+        np.array(df.close), fastperiod=12, slowperiod=26, signalperiod=9)
+    if (DIF[-1] > 0) and (DEA[-1] > 0) and (DIF[-1] > DEA[-1]) and (DIF[-2] < DEA[-2]):
         return 'DIF上穿，考虑买入'
-    elif (DIF[-1]<0) and (DEA[-1]<0) and (DIF[-1]<DEA[-1]) and (DIF[-2]>DEA[-2]):
+    elif (DIF[-1] < 0) and (DEA[-1] < 0) and (DIF[-1] < DEA[-1]) and (DIF[-2] > DEA[-2]):
         return 'DIF下穿，考虑卖出'
     else:
         return ''
 
+
 def OBV_analyze(df):
-    volsma5=df.volume.rolling(5).mean()
-    volsma10=df.volume.rolling(10).mean()
-    volsma=((volsma5+volsma10)/2)
-    Volsignal=(df['volume'][-1]>volsma)*1
-    Volsignal[Volsignal==0]=-1
-    n=1
-    for i in range(1,len(Volsignal)):
+    volsma5 = df.volume.rolling(5).mean()
+    volsma10 = df.volume.rolling(10).mean()
+    volsma = ((volsma5+volsma10)/2)
+    Volsignal = (df['volume'][-1] > volsma)*1
+    Volsignal[Volsignal == 0] = -1
+    n = 1
+    for i in range(1, len(Volsignal)):
         if Volsignal[-i] != Volsignal[-i-1]:
-            n=i
+            n = i
             break
-    if Volsignal[-1]>0:
+    if Volsignal[-1] > 0:
         return "连续%d天成交量大于均值" % n
     else:
         return "连续%d天成交量小于均值" % n
 
 
-
 def main_df(security_pools):
-    industry_list=pd.DataFrame(columns=['code','industry_name','industry_code'])
-    industry_list=get_industry_concept(security_pools)
-    industry_list=get_industry_index(industry_list)
-    industry_list=get_locked_info(industry_list)
-    industry_list.insert(8,'SMA_strategy','')
-    industry_list.insert(9,'MACD_strategy','')
-    industry_list.insert(10,'OBV_strategy','')
-    industry_list.insert(11,'next_rate','')
-    for key,value in enumerate(industry_list['code']):
-        df = get_main_info(value,50)
-        industry_list.loc[key,'SMA_strategy']=MA_analyze(df)
-        industry_list.loc[key,'MACD_strategy']=MACD_analyze(df)
-        industry_list.loc[key,'OBV_strategy']=OBV_analyze(df)
-        industry_list.loc[key,'next_rate']=df['next_rate'][-1]
+    industry_list = pd.DataFrame(
+        columns=['code', 'industry_name', 'industry_code'])
+    industry_list = get_industry_concept(security_pools)
+    industry_list = get_industry_index(industry_list)
+    industry_list = get_locked_info(industry_list)
+    industry_list.insert(8, 'SMA_strategy', '')
+    industry_list.insert(9, 'MACD_strategy', '')
+    industry_list.insert(10, 'OBV_strategy', '')
+    industry_list.insert(11, 'next_rate', '')
+    for key, value in enumerate(industry_list['code']):
+        df = get_main_info(value, 50)
+        industry_list.loc[key, 'SMA_strategy'] = MA_analyze(df)
+        industry_list.loc[key, 'MACD_strategy'] = MACD_analyze(df)
+        industry_list.loc[key, 'OBV_strategy'] = OBV_analyze(df)
+        industry_list.loc[key, 'next_rate'] = df['next_rate'][-1]
     return industry_list
 
 
 def industry_analyze(industry_list):
-    temp=[]
-    for key,value in enumerate(industry_list['ind_change']):
-        if value*industry_list.loc[key,'next_rate'] <0:
+    temp = []
+    for key, value in enumerate(industry_list['ind_change']):
+        if value*industry_list.loc[key, 'next_rate'] < 0:
             temp.append('股票与行业指数相背离')
         else:
             temp.append("")
     return temp
-industry_list=main_df(security_pools)
-industry_list['industry_strategy']=industry_analyze(industry_list)
-industry_list=industry_list[['code','industry_name','industry_strategy','day',
-'rate1','SMA_strategy','MACD_strategy','OBV_strategy']]
-industry_list['股名']=[get_security_info(x,date='2020-06-13').display_name for x in industry_list['code']]
-industry_list.rename(columns={'day':'解禁日期','rate1':'解禁股所占比例'})
-df2=industry_list.to_html(index=False, float_format=lambda x: format(x,',.2f'))
+
+
+industry_list = main_df(security_pools)
+industry_list['industry_strategy'] = industry_analyze(industry_list)
+industry_list = industry_list[['code', 'industry_name', 'industry_strategy', 'day',
+                               'rate1', 'SMA_strategy', 'MACD_strategy', 'OBV_strategy']]
+industry_list['股名'] = [get_security_info(
+    x, date='2020-06-13').display_name for x in industry_list['code']]
+industry_list.rename(columns={'day': '解禁日期', 'rate1': '解禁股所占比例'})
+df2 = industry_list.to_html(
+    index=False, float_format=lambda x: format(x, ',.2f'))
+
 
 def create_index_info(index):
-    need_cols=['Open','High','Low','Close','rate']
-    temp=yf.Ticker(index)
-    temp_hist=temp.history()
-    temp_hist['rate']=temp_hist['Close'].pct_change().mul(100).round(2)
-    temp_hist=temp_hist[need_cols]
-    temp_hist=temp_hist.tail(1)
-    temp_hist['name']=[index]
+    need_cols = ['Open', 'High', 'Low', 'Close', 'rate']
+    temp = yf.Ticker(index)
+    temp_hist = temp.history()
+    temp_hist['rate'] = temp_hist['Close'].pct_change().mul(100).round(2)
+    temp_hist = temp_hist[need_cols]
+    temp_hist = temp_hist.tail(1)
+    temp_hist['name'] = [index]
     return temp_hist
+
+
 def create_df1(index_list):
-    df1=pd.DataFrame(columns=['Open','High','Low','Close','rate','name'])
+    df1 = pd.DataFrame(
+        columns=['Open', 'High', 'Low', 'Close', 'rate', 'name'])
     for item in index_list:
-        temp_hist=create_index_info(item)
-        df1=pd.concat([df1,temp_hist],axis=0)
+        temp_hist = create_index_info(item)
+        df1 = pd.concat([df1, temp_hist], axis=0)
     return df1
-df1=create_df1(['DJIA','NDAQ','^SPX'])
-df1=df1.to_html(index=False, float_format=lambda x: format(x,',.2f'))
+
+
+df1 = create_df1(['DJIA', 'NDAQ', '^SPX'])
+df1 = df1.to_html(index=False, float_format=lambda x: format(x, ',.2f'))
 
 
 ####发邮件模块#######
@@ -275,31 +297,36 @@ def get_html_msg(df_html1, df_html2, table_title):
 
     html_msg = "<html>" + head + body + "</html>"
     return html_msg
-#添加正文
-def attach_text(msg,html_msg):
+# 添加正文
+
+
+def attach_text(msg, html_msg):
     content_html = MIMEText(html_msg, "html", "utf-8")
     msg.attach(content_html)
 
-#建立主发送模块
-#imap:lhvkywherkqxbiei
+# 建立主发送模块
+# imap:lhvkywherkqxbiei
+
+
 def mail(df_html1, df_html2, table_title):
-    sender = '406933095@qq.com'  #发件人
-    receivers = 'betterdl041@163.com,10539519@qq.com'  #多个收件人
-    smtp_server='smtp.qq.com'
-    smtp_port=465
-    qqCode='qmkxstjyyhcqbheh'
-    subject = '每日股票提醒'  #标题
+    sender = '406933095@qq.com'  # 发件人
+    receivers = 'betterdl041@163.com,10539519@qq.com'  # 多个收件人
+    smtp_server = 'smtp.qq.com'
+    smtp_port = 465
+    qqCode = '**************'
+    subject = '每日股票提醒'  # 标题
     msg = MIMEMultipart('mixed')
     msg['From'] = sender
     msg['To'] = receivers
     msg['Subject'] = subject
-    html_msg=get_html_msg(df_html1, df_html2, table_title)
-    attach_text(msg,html_msg)
-    smtp=smtplib.SMTP_SSL(smtp_server,smtp_port)   
-    #我们用set_debuglevel(1)就可以打印出和SMTP服务器交互的所有信息。
-    #smtp.set_debuglevel(1)
-    smtp.login(sender,qqCode)   
-    smtp.sendmail(sender, receivers.split(','), msg.as_string())    
+    html_msg = get_html_msg(df_html1, df_html2, table_title)
+    attach_text(msg, html_msg)
+    smtp = smtplib.SMTP_SSL(smtp_server, smtp_port)
+    # 我们用set_debuglevel(1)就可以打印出和SMTP服务器交互的所有信息。
+    # smtp.set_debuglevel(1)
+    smtp.login(sender, qqCode)
+    smtp.sendmail(sender, receivers.split(','), msg.as_string())
     smtp.quit()
+
 
 mail(df1, df2, '信息')
