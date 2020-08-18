@@ -1,20 +1,35 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Aug 16 18:57:10 2020
+
+@author: A
+"""
+
+
+from kpi_plot import *
 import talib as ta
 import tushare as ts
 import smtplib
 from email.mime.text import MIMEText
 from email import encoders
 from email.mime.multipart import MIMEMultipart
+from email.mime.image import MIMEImage
 from email.utils import formataddr
 import pandas as pd
 import yfinance as yf
 from jqdatasdk import *
 import time
 import numpy as np
+import sys
+sys.path.append('/home/temp')
 
 auth('13918216955', 'Keepgoing@2020')
-security_pools = ['601318.XSHG', '600036.XSHG', '600115.XSHG', '600600.XSHG', '000063.XSHE',
-                  '002049.XSHE', '603517.XSHG', '000977.XSHE', '002230.XSHE', '603000.XSHG',
-                  '002714.XSHE', '600196.XSHG', '002405.XSHE', '601021.XSHG']
+# security_pools=['601318.XSHG','600036.XSHG','600115.XSHG','600600.XSHG','000063.XSHE',
+#     '002049.XSHE','603517.XSHG','000977.XSHE','002230.XSHE','603000.XSHG',
+#     '002714.XSHE','600196.XSHG','002405.XSHE','601021.XSHG']
+security_pools = ['601318.XSHG', '600031.XSHG', '600115.XSHG', '600276.XSHG', '600529.XSHG',
+                  '600667.XSHG', '601872.XSHG', '000063.XSHE', '000756.XSHE',
+                  '000977.XSHE', '002065.XSHE', '002384.XSHE', '300324.XSHE']
 today = time.strftime('%Y-%m-%d', time.localtime(time.time()))
 
 
@@ -117,14 +132,14 @@ def main_df(security_pools):
     industry_list = get_industry_index(industry_list)
     industry_list = get_locked_info(industry_list)
     industry_list.insert(8, 'SMA_strategy', '')
-    industry_list.insert(9, 'MACD_strategy', '')
-    industry_list.insert(10, 'OBV_strategy', '')
-    industry_list.insert(11, 'next_rate', '')
+    # industry_list.insert(9,'MACD_strategy','')
+    # industry_list.insert(10,'OBV_strategy','')
+    industry_list.insert(9, 'next_rate', '')
     for key, value in enumerate(industry_list['code']):
         df = get_main_info(value, 50)
         industry_list.loc[key, 'SMA_strategy'] = MA_analyze(df)
-        industry_list.loc[key, 'MACD_strategy'] = MACD_analyze(df)
-        industry_list.loc[key, 'OBV_strategy'] = OBV_analyze(df)
+        # industry_list.loc[key,'MACD_strategy']=MACD_analyze(df)
+        # industry_list.loc[key,'OBV_strategy']=OBV_analyze(df)
         industry_list.loc[key, 'next_rate'] = df['next_rate'][-1]
     return industry_list
 
@@ -140,12 +155,12 @@ def industry_analyze(industry_list):
 
 
 industry_list = main_df(security_pools)
-industry_list['industry_strategy'] = industry_analyze(industry_list)
-industry_list = industry_list[['code', 'industry_name', 'industry_strategy', 'day',
-                               'rate1', 'SMA_strategy', 'MACD_strategy', 'OBV_strategy']]
+# industry_list['industry_strategy']=industry_analyze(industry_list)
+need_cols = ['code', 'industry_name', 'day', 'rate1', 'SMA_strategy']
+industry_list = industry_list[need_cols]
 industry_list['股名'] = [get_security_info(
     x, date='2020-06-13').display_name for x in industry_list['code']]
-industry_list.rename(columns={'day': '解禁日期', 'rate1': '解禁股所占比例'})
+industry_list.rename(columns={'day': '解禁日期', 'rate1': '解禁股所占比例'}, inplace=True)
 df2 = industry_list.to_html(
     index=False, float_format=lambda x: format(x, ',.2f'))
 
@@ -172,10 +187,23 @@ def create_df1(index_list):
 
 df1 = create_df1(['DJIA', 'NDAQ', '^SPX'])
 df1 = df1.to_html(index=False, float_format=lambda x: format(x, ',.2f'))
+########添加指标图##############
 
+
+def get_pic_list(industry_list, file_path):
+    pic_list = []
+    for key, value in enumerate(industry_list['code']):
+        df = get_main_info(value, 120)
+        stock_name = industry_list['股名'][key]
+        pic = get_image(df, file_path, stock_name)
+        pic.add_header('Content-ID', '<'+str(key)+'>')
+        pic_list.append(get_image(df, file_path, stock_name))
+    return pic_list
 
 ####发邮件模块#######
-def get_html_msg(df_html1, df_html2, table_title):
+
+
+def get_html_msg(df_html1, df_html2, table_title, pic_list):
     # 表格格式
     head = \
         """
@@ -291,19 +319,29 @@ def get_html_msg(df_html1, df_html2, table_title):
          <div class="content">
             {df_html2}
         </div>
-        </body>
-        <br /><br />
+        <br>
         """.format(df_html1=df_html1, df_html2=df_html2, table_title=table_title)
 
-    html_msg = "<html>" + head + body + "</html>"
+    for i in range(len(pic_list)):
+        if index % 2 == 0:
+            body += '<img src="cid:' + str(i) + '"><br>'
+        else:
+            body += '<img src="cid:' + str(i) + '">'
+
+    html_msg = "<html>" + head + body + "</body></html>"
     return html_msg
+
+
 # 添加正文
-
-
 def attach_text(msg, html_msg):
     content_html = MIMEText(html_msg, "html", "utf-8")
     msg.attach(content_html)
+# 添加图片
 
+
+def attach_pic(msg, pic_list):
+    for item in pic_list:
+        msg.attach(item)
 # 建立主发送模块
 # imap:lhvkywherkqxbiei
 
@@ -313,14 +351,17 @@ def mail(df_html1, df_html2, table_title):
     receivers = 'betterdl041@163.com,10539519@qq.com'  # 多个收件人
     smtp_server = 'smtp.qq.com'
     smtp_port = 465
-    qqCode = '**************'
+    qqCode = '*********'
     subject = '每日股票提醒'  # 标题
     msg = MIMEMultipart('mixed')
     msg['From'] = sender
     msg['To'] = receivers
     msg['Subject'] = subject
-    html_msg = get_html_msg(df_html1, df_html2, table_title)
+    file_path = '/home/temp/pic1.jpg'
+    pic_list = get_pic_list(industry_list, file_path)
+    html_msg = get_html_msg(df_html1, df_html2, table_title, pic_list)
     attach_text(msg, html_msg)
+    attach_pic(msg, pic_list)
     smtp = smtplib.SMTP_SSL(smtp_server, smtp_port)
     # 我们用set_debuglevel(1)就可以打印出和SMTP服务器交互的所有信息。
     # smtp.set_debuglevel(1)
