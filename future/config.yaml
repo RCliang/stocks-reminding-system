@@ -1,0 +1,6 @@
+columns_dict:
+  update_time: time_key
+  last_price: close
+  open_price: open
+  high_price: high
+  low_price: low
