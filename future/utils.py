@@ -7,6 +7,7 @@ import time
 import numpy as np
 import math
 import datetime
+from openai import OpenAI
 import pandas as pd
 import backtrader as bt
 import backtrader.indicators as btind
@@ -74,3 +75,17 @@ def run_backtest(strategy, stock_code, start_date, end_date, initial_cash=100000
     fig.savefig('test.png')
 
     return results
+
+def get_ai_recommendation(prompt: str) -> str:
+    client = OpenAI(api_key="sk-8c887e6454f741cc9553da2be62487af", base_url="https://api.deepseek.com")
+    response = client.chat.completions.create(
+        model="deepseek-chat",
+            messages=[
+                {"role": "system", "content": "你是一个专业的股票助手。"},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=1024,
+        temperature=0.7,
+        stream=False
+    )
+    return response.choices[0].message.content

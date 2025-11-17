@@ -140,8 +140,8 @@ class KlineFetcher:
 
 def main():
     fetcher = KlineFetcher(TARGET_POOLS, daily_columns, hist_columns, 'data')
-    # tmp = fetcher.hist_kline_persistence()
-    fetcher.update_kline_daily()
+    tmp = fetcher.hist_kline_persistence()
+    # fetcher.update_kline_daily()
     return
 
 if __name__ == '__main__':
