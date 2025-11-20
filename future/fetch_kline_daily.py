@@ -25,7 +25,7 @@ def get_stock_pool(pool_name="全部"):
 # 从 config.yaml 文件中读取配置
 with open('config.yaml', 'r', encoding='utf-8') as f:
     config = yaml.safe_load(f)
-TARGET_POOLS = get_stock_pool()
+TARGET_POOLS = get_stock_pool("etf")
 daily_columns = ['code', 'name', 'update_time', 'last_price', 'open_price', 'high_price', \
     'low_price', 'pe_ratio', 'volume', 'turnover', 'turnover_rate']
 columns_dict = config['columns_dict']
@@ -106,14 +106,14 @@ class KlineFetcher:
         finally:
             quote_ctx.close()
     
-    def hist_kline_persistence(self):
+    def hist_kline_persistence(self, file_name):
         yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime('%Y-%m-%d')
         final_data = pd.DataFrame(columns=self.hist_columns)  # 修复列名初始化
         
         total_stocks = len(self.target_pools)
         for i, item in enumerate(self.target_pools):
             print(f'Processing stock {i+1}/{total_stocks}: {item}')
-            data = self.fetch_hist_kline(item, '2020-01-01', yesterday)
+            data = self.fetch_hist_kline(item, '2024-01-01', yesterday)
             
             if data is not None and not data.empty:
                 data['time_key'] = [datetime.datetime.strptime(x[:10], "%Y-%m-%d") for x in data['time_key']]
@@ -122,20 +122,20 @@ class KlineFetcher:
             else:
                 print(f'Skipping {item} due to empty data')
         
-        final_data.to_parquet(f'{self.save_dir}/kline_data.parquet', index=False)
-        print(f'Data saved to {self.save_dir}/kline_data.parquet')
-        return "OK"
+        final_data.to_parquet(f'{self.save_dir}/{file_name}.parquet', index=False)
+        print(f'Data saved to {self.save_dir}/{file_name}.parquet')
+        return final_data
 
     def update_kline_daily(self):
         data = self.fetch_kline_daily(self.daily_columns, self.target_pools)
         data = self.process_daily_kline(data)
         try:
-            final_data = pd.read_parquet(f'{self.save_dir}/kline_data.parquet')
+            final_data = pd.read_parquet(f'{self.save_dir}/kline_etf_data.parquet')
         except FileNotFoundError:
             final_data = pd.DataFrame()
         final_data = pd.concat([final_data, data], axis=0)
-        final_data.to_parquet(f'{self.save_dir}/kline_data.parquet', index=False)
-        print("kline_data.parquet updated")
+        final_data.to_parquet(f'{self.save_dir}/kline_etf_data.parquet', index=False)
+        print("kline_etf_data.parquet updated")
         return
 
 def main():

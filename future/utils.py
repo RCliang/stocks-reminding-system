@@ -79,13 +79,16 @@ def run_backtest(strategy, stock_code, start_date, end_date, initial_cash=100000
 def get_ai_recommendation(prompt: str) -> str:
     client = OpenAI(api_key="sk-8c887e6454f741cc9553da2be62487af", base_url="https://api.deepseek.com")
     response = client.chat.completions.create(
-        model="deepseek-chat",
+        model="deepseek-reasoner",
             messages=[
-                {"role": "system", "content": "你是一个专业的股票助手。"},
+                {"role": "system", "content": "你是一个专业的证券操盘手，专注于股票的交易策略的执行，擅长根据股票的历史数据和当前市场情况，进行交易。"},
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=1024,
-        temperature=0.7,
+            max_tokens=8196,
+        temperature=0.1,
         stream=False
     )
-    return response.choices[0].message.content
+    reasoning_content = response.choices[0].message.reasoning_content
+    content = response.choices[0].message.content
+    return reasoning_content, content
+

@@ -1,2 +1,12 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Python files should always use LF line endings
+*.py text eol=lf
+
+# Streamlit and data files
+*.ipynb text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.parquet binary
