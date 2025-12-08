@@ -180,8 +180,23 @@ class DatabaseTools:
         查询指定账户的持仓记录
         """
         with self.get_session() as session:
-            return get_positions_by_account(session, account_id, start_date, end_date, code)
-            
+            positions = get_positions_by_account(session, account_id, start_date, end_date, code)
+            # 转换为字典列表以避免会话关闭后的访问问题
+            result = []
+            for position in positions:
+                # 创建字典并手动复制所有属性
+                position_dict = {}
+                # 只获取基本属性，避免触发延迟加载
+                for attr in dir(position):
+                    if not attr.startswith('_') and not callable(getattr(position, attr)):
+                        value = getattr(position, attr)
+                        # 处理日期时间格式
+                        if hasattr(value, 'strftime'):
+                            value = value.strftime('%Y-%m-%d %H:%M:%S')
+                        position_dict[attr] = value
+                result.append(position_dict)
+            return result
+    
     def delete_position(self, position_id):
         """
         删除指定ID的持仓记录

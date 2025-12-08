@@ -5,20 +5,21 @@ import logging
 import time
 from utils import get_ai_recommendation
 from prompts import get_trading_prompt
-
+from db_tools import DatabaseTools
 # 配置日志
 logger = logging.getLogger(__name__)
 
-def generate_investment_recommendations(account_id, db_manager=None):
+def generate_investment_recommendations(account_id):
     """
     生成投资建议
     """
+    db_manager = DatabaseTools()
     try:
         logger.info(f"为账户 {account_id} 生成投资建议")
         
         # 这里应该调用AI推荐系统
         # 查询账户持仓情况
-        holdings = db_manager.get_holdings(account_id) if db_manager else []
+        holdings = db_manager.get_positions_by_account(account_id) if db_manager else []
         st.info(holdings)
         # 构建包含持仓信息的提示
         prompt = get_trading_prompt(account_id, holdings)
