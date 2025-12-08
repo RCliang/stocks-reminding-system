@@ -128,16 +128,35 @@ def show_trend_analysis():
         # 收益统计
         st.subheader("📈 收益统计")
         
-        total_return = (portfolio_data['总价值'].iloc[-1] / portfolio_data['初始资金'].iloc[0] - 1) * 100
-        annualized_return = ((1 + total_return/100) ** (365 / (portfolio_data['日期'].iloc[-1] - portfolio_data['日期'].iloc[0]).days) - 1) * 100
-        max_daily_return = valid_returns.max() if not valid_returns.empty else 0
-        min_daily_return = valid_returns.min() if not valid_returns.empty else 0
+        # 初始化变量以避免后面计算时引用未定义的变量
+        annualized_return = 0
+        total_return = 0
         
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("总收益率", f"{total_return:.2f}%")
-        col2.metric("年化收益率", f"{annualized_return:.2f}%")
-        col3.metric("最大单日收益", f"{max_daily_return:.2f}%")
-        col4.metric("最大单日亏损", f"{min_daily_return:.2f}%")
+        try:
+            total_return = (portfolio_data['总价值'].iloc[-1] / portfolio_data['初始资金'].iloc[0] - 1) * 100
+            
+            # 检查日期数据有效性
+            if len(portfolio_data) >= 2:
+                days_diff = (portfolio_data['日期'].iloc[-1] - portfolio_data['日期'].iloc[0]).days
+                # 避免除以零的情况
+                if days_diff > 0:
+                    annualized_return = ((1 + total_return/100) ** (365 / days_diff) - 1) * 100
+                else:
+                    annualized_return = 0  # 同一天，无法计算年化
+            else:
+                annualized_return = 0  # 数据点不足
+                
+            max_daily_return = valid_returns.max() if not valid_returns.empty else 0
+            min_daily_return = valid_returns.min() if not valid_returns.empty else 0
+            
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("总收益率", f"{total_return:.2f}%")
+            col2.metric("年化收益率", f"{annualized_return:.2f}%")
+            col3.metric("最大单日收益", f"{max_daily_return:.2f}%")
+            col4.metric("最大单日亏损", f"{min_daily_return:.2f}%")
+        except Exception as e:
+            logger.error(f"计算收益统计失败: {str(e)}")
+            st.error("收益统计计算失败，请检查数据完整性")
     
     # 风险评估选项卡
     with trend_tabs[2]:
@@ -151,7 +170,7 @@ def show_trend_analysis():
         portfolio_value = portfolio_data['总价值'].values
         running_max = np.maximum.accumulate(portfolio_value)
         drawdown = (portfolio_value - running_max) / running_max * 100
-        max_drawdown = drawdown.min()
+        max_drawdown = drawdown.min() if drawdown.min() != 0 else -0.00001
         
         # 创建最大回撤图表
         fig = go.Figure()

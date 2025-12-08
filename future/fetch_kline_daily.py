@@ -7,6 +7,16 @@ from futu import *
 import time
 import datetime
 
+def get_market_snapshot(codes: str):
+    quote_ctx = OpenQuoteContext(host='127.0.0.1', port=11111)
+
+    ret, data = quote_ctx.get_market_snapshot(codes)
+    if ret == RET_OK:
+        last_price = data['last_price'][0]
+    else:
+        print('error:', data)
+    quote_ctx.close()
+    return last_price
 
 def get_stock_pool(pool_name="全部"):
     quote_ctx = OpenQuoteContext(host='127.0.0.1', port=11111)
@@ -106,14 +116,14 @@ class KlineFetcher:
         finally:
             quote_ctx.close()
     
-    def hist_kline_persistence(self, file_name):
+    def hist_kline_persistence(self, file_name, start_date='2024-01-01'):
         yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime('%Y-%m-%d')
         final_data = pd.DataFrame(columns=self.hist_columns)  # 修复列名初始化
         
         total_stocks = len(self.target_pools)
         for i, item in enumerate(self.target_pools):
             print(f'Processing stock {i+1}/{total_stocks}: {item}')
-            data = self.fetch_hist_kline(item, '2024-01-01', yesterday)
+            data = self.fetch_hist_kline(item, start_date, yesterday)
             
             if data is not None and not data.empty:
                 data['time_key'] = [datetime.datetime.strptime(x[:10], "%Y-%m-%d") for x in data['time_key']]

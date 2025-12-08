@@ -1,4 +1,3 @@
-import streamlit as st
 import pandas as pd
 import logging
 from datetime import datetime
@@ -6,7 +5,10 @@ import random
 import time
 from db_schema import DatabaseManager, get_portfolios_by_account, get_positions_by_account, get_positions_by_portfolio, update_portfolio, insert_position, Portfolio, Position
 from sqlalchemy.orm import Session
-
+import streamlit as st
+from fetch_kline_daily import get_market_snapshot
+from db_tools import DatabaseTools
+SLIP_FEE_RATE = 0.00008
 # 配置日志
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,8 @@ def execute_trade(account_id, trade_type, code, name, price, quantity, db_manage
     返回:
         tuple: (success, result)
     """
+    db_manager = DatabaseManager('investment_portfolio.db')
+    db_tools = DatabaseTools(db_manager)
     # 参数验证
     try:
         # 输入参数验证
@@ -118,7 +122,7 @@ def execute_trade(account_id, trade_type, code, name, price, quantity, db_manage
             existing_position = next((p for p in current_positions if p.code == code), None)
             
             # 模拟市场价格（在实际应用中应该从外部API获取）
-            market_price = price * (1 + random.uniform(-0.02, 0.02))
+            market_price = get_market_snapshot(code)
             
             # 计算盈亏
             profit_loss = (market_price - price) * quantity
@@ -184,22 +188,26 @@ def execute_trade(account_id, trade_type, code, name, price, quantity, db_manage
             
             # 计算盈亏
             holding_price = existing_position.price
-            profit_loss = (price - holding_price) * quantity
+            # 考虑滑点费用万分之0.8
+            
+            slip_fee = holding_price * quantity * SLIP_FEE_RATE
+            profit_loss = (price - holding_price) * quantity - slip_fee
             profit_loss_pct = (profit_loss / (holding_price * quantity)) * 100
             
             # 更新现金余额
-            new_cash = current_cash + trade_amount
+            new_cash = current_cash + trade_amount - slip_fee
             
             # 更新持仓数量
             remaining_quantity = current_quantity - quantity
             
             if remaining_quantity == 0:
                 # 如果全部卖出，删除持仓记录
-                session.delete(existing_position)
+                db_tools = DatabaseTools()
+                db_tools.delete_position(existing_position.id)
             else:
                 # 否则更新持仓数量
                 existing_position.quantity = remaining_quantity
-                existing_position.value = remaining_quantity * existing_position.market_price
+                existing_position.value = remaining_quantity * price
                 session.commit()
             
             # 构建交易结果
@@ -223,9 +231,11 @@ def execute_trade(account_id, trade_type, code, name, price, quantity, db_manage
         
         # 更新投资组合信息
         # 重新获取所有持仓以计算总市值
-        updated_positions = get_positions_by_portfolio(session, portfolio_id)
-        total_position_value = sum(pos.value for pos in updated_positions)
+        updated_positions = db_tools.get_positions_by_portfolio(portfolio_id)
+        total_position_value = sum(pos['value'] for pos in updated_positions)
         portfolio_value = new_cash + total_position_value
+        st.info(f"当前持仓价值: {total_position_value:.2f}")
+        st.info(f"当前现金余额: {new_cash:.2f}")
         total_return = portfolio_value - initial_capital
         total_return_pct = (total_return / initial_capital) * 100
         
@@ -272,99 +282,56 @@ def execute_trade(account_id, trade_type, code, name, price, quantity, db_manage
         if session:
             session.close()
 
-def test_trade_operations():
+def refresh_position_prices(db_session, positions):
     """
-    测试交易操作功能
+    刷新持仓股票的最新价格并计算盈亏
     
-    此函数测试execute_trade函数的基本功能，包括买入、卖出和错误处理。
-    在实际应用中，应该使用数据库事务来隔离测试，避免污染生产数据。
+    参数:
+        db_session: 数据库会话对象
+        positions: 持仓列表
+    
+    返回:
+        更新后的持仓列表
     """
-    try:
-        test_account_id = "test_account_" + datetime.now().strftime("%Y%m%d_%H%M%S")
-        test_code = "600000"
-        test_name = "浦发银行"
+    updated_positions = []
+    for position in positions:
+        # 模拟获取最新价格（在实际应用中应该从外部API获取）
+        latest_price = get_market_snapshot(position.code)
         
-        print("开始测试交易功能...")
+        # 考虑滑点费用万分之0.8
+        slip_fee = latest_price * position.quantity * SLIP_FEE_RATE
         
-        # 初始化测试数据库会话
-        db_manager = DatabaseManager()
-        db_manager.init_db()
-        db_session = db_manager.create_session()
+        # 计算新的盈亏和盈亏百分比
+        profit_loss = (latest_price - position.price) * position.quantity - slip_fee
+        profit_loss_pct = (profit_loss / (position.price * position.quantity)) * 100
         
-        print("\n测试1: 测试参数验证 - 无效价格")
-        success, result = execute_trade(test_account_id, "买入", test_code, test_name, -10.0, 100)
-        print(f"结果: {success}, {result}")
-        assert not success, "测试1失败: 无效价格的交易应该失败"
+        # 更新持仓信息
+        position.market_price = latest_price
+        position.value = position.quantity * latest_price
+        position.profit_loss = profit_loss
+        position.profit_loss_pct = profit_loss_pct
         
-        print("\n测试2: 测试参数验证 - 无效数量")
-        success, result = execute_trade(test_account_id, "买入", test_code, test_name, 10.0, 0)
-        print(f"结果: {success}, {result}")
-        assert not success, "测试2失败: 无效数量的交易应该失败"
-        
-        print("\n测试3: 测试参数验证 - 无效交易类型")
-        success, result = execute_trade(test_account_id, "持仓", test_code, test_name, 10.0, 100)
-        print(f"结果: {success}, {result}")
-        assert not success, "测试3失败: 无效交易类型的交易应该失败"
-        
-        print("\n测试4: 执行买入操作")
-        success, result = execute_trade(test_account_id, "买入", test_code, test_name, 10.0, 100)
-        print(f"结果: {success}, {result.get('message', 'No message')}")
-        assert success, "测试4失败: 正常买入操作应该成功"
-        assert result.get('cash_after', 0) >= 98000.0, f"测试4失败: 买入后现金余额不正确"
-        
-        print("\n测试5: 执行卖出操作")
-        success, result = execute_trade(test_account_id, "卖出", test_code, test_name, 11.0, 50)
-        print(f"结果: {success}, {result.get('message', 'No message')}")
-        assert success, "测试5失败: 正常卖出操作应该成功"
-        assert result.get('profit_loss', -1) >= 0, "测试5失败: 卖出盈利计算不正确"
-        
-        print("\n测试6: 测试卖出超出持仓数量")
-        success, result = execute_trade(test_account_id, "卖出", test_code, test_name, 11.0, 100)
-        print(f"结果: {success}, {result}")
-        assert not success, "测试6失败: 超出持仓数量的卖出应该失败"
-        
-        print("\n所有测试通过！")
-        return True
+        # 更新数据库
+        db_session.merge(position)
+        updated_positions.append(position)
     
-    except AssertionError as ae:
-        print(f"\n测试失败: {str(ae)}")
-        return False
-    except Exception as e:
-        print(f"\n测试过程中出现异常: {str(e)}")
-        return False
-    finally:
-        if 'db_session' in locals():
-            db_session.close()
+    return updated_positions
 
-# 如果直接运行此文件，执行测试
-if __name__ == "__main__":
-    test_trade_operations()
-
-def show_trade_operations(account_id, start_date, end_date):
+def show_trade_operations(account_id, start_date=None, end_date=None):
     """
     显示交易操作页面
+    
+    参数:
+        account_id: 账户ID
+        start_date: 开始日期（可选）
+        end_date: 结束日期（可选）
     """
+    # 仅在需要时导入streamlit
+    import streamlit as st
+    
     # 初始化数据库连接
     db_manager = DatabaseManager()
     db_manager.init_db()
-    session = db_manager.create_session()
-    
-    # 获取账户信息和投资组合数据
-    try:
-        portfolios = get_portfolios_by_account(session, account_id)
-        if portfolios:
-            portfolio = portfolios[0]
-            current_cash = portfolio.cash
-            portfolio_value = portfolio.total_value
-        else:
-            current_cash = 100000.00  # 默认初始资金
-            portfolio_value = 100000.00
-    except Exception as e:
-        logger.error(f"获取账户信息失败: {str(e)}")
-        current_cash = 100000.00
-        portfolio_value = 100000.00
-    finally:
-        session.close()
     
     st.header("💰 交易操作")
     
@@ -373,13 +340,6 @@ def show_trade_operations(account_id, start_date, end_date):
         col1, col2 = st.columns(2)
         
         with col1:
-            # 交易类型选择
-            trade_type = st.radio(
-                "交易类型",
-                options=["买入", "卖出"],
-                horizontal=True
-            )
-            
             # 股票代码输入
             code = st.text_input(
                 "股票代码",
@@ -395,15 +355,6 @@ def show_trade_operations(account_id, start_date, end_date):
             )
         
         with col2:
-            # 交易价格输入
-            price = st.number_input(
-                "交易价格 (元)",
-                min_value=0.01,
-                step=0.01,
-                format="%.2f",
-                help="请输入交易价格"
-            )
-            
             # 交易数量输入
             quantity = st.number_input(
                 "交易数量 (股)",
@@ -412,21 +363,30 @@ def show_trade_operations(account_id, start_date, end_date):
                 help="请输入交易数量"
             )
         
+        # 交易价格输入
+        price = st.number_input(
+            "交易价格 (元)",
+            min_value=0.01,
+            step=0.01,
+            format="%.2f",
+            help="请输入交易价格"
+        )
+        
         # 计算交易金额
         trade_amount = price * quantity
         
-        # 显示交易金额和账户余额
-        st.info(f"交易金额: ¥{trade_amount:,.2f}")
-        st.info(f"当前账户余额: ¥{current_cash:,.2f}")
-        
         # 提交按钮
-        submit_button = st.form_submit_button(
-            f"🚀 确认{trade_type}",
-            type="primary"
-        )
+        col1, col2 = st.columns(2)
+        with col1:
+            buy_button = st.form_submit_button("📈 买入", type="primary")
+        with col2:
+            sell_button = st.form_submit_button("📉 卖出", type="primary")
     
     # 处理交易提交
-    if submit_button:
+    if buy_button or sell_button:
+        # 确定交易类型
+        trade_type = "买入" if buy_button else "卖出"
+        
         # 验证表单数据
         if not code or not name:
             st.error("请输入股票代码和名称")
@@ -436,147 +396,103 @@ def show_trade_operations(account_id, start_date, end_date):
             # 显示交易确认信息
             st.info(f"正在执行{trade_type}操作，请稍候...")
             
-            # 模拟交易处理延迟
-            with st.spinner("交易处理中..."):
-                time.sleep(2)
+            # 执行交易
+            success, result = execute_trade(account_id, trade_type, code, name, price, quantity)
+            
+            if success:
+                # 显示交易成功消息
+                st.success(result["message"])
                 
-                # 执行交易
-                success, result = execute_trade(account_id, trade_type, code, name, price, quantity)
+                # 显示交易详情
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown(f"**交易时间:** {result['timestamp']}")
+                    st.markdown(f"**交易类型:** {result['trade_type']}")
+                    st.markdown(f"**股票代码:** {result['code']}")
+                    st.markdown(f"**股票名称:** {result['name']}")
+                    st.markdown(f"**交易价格:** ¥{result['price']:.2f}")
                 
-                if success:
-                    # 将交易记录添加到会话状态
-                    if 'trade_history' not in st.session_state:
-                        st.session_state.trade_history = []
-                    
-                    # 创建交易记录
-                    trade_record = {
-                        "timestamp": result['timestamp'],
-                        "trade_type": result['trade_type'],
-                        "code": result['code'],
-                        "name": result['name'],
-                        "price": result['price'],
-                        "quantity": result['quantity'],
-                        "trade_amount": result['trade_amount'],
-                        "profit_loss": result['profit_loss'],
-                        "profit_loss_pct": result['profit_loss_pct']
+                with col2:
+                    st.markdown(f"**交易数量:** {result['quantity']} 股")
+                    st.markdown(f"**交易金额:** ¥{result['trade_amount']:,.2f}")
+                    st.markdown(f"**现金余额:** ¥{result['cash_after']:,.2f}")
+                    st.markdown(f"**投资组合总价值:** ¥{result['portfolio_value']:,.2f}")
+                
+                # 显示盈亏信息
+                profit_color = "green" if result['profit_loss'] > 0 else "red"
+                st.markdown(f"**盈亏金额:** <span style='color:{profit_color};font-weight:bold'>¥{result['profit_loss']:,.2f}</span>", unsafe_allow_html=True)
+                st.markdown(f"**盈亏比例:** <span style='color:{profit_color};font-weight:bold'>{result['profit_loss_pct']:.2f}%</span>", unsafe_allow_html=True)
+            else:
+                # 显示交易失败消息
+                st.error(result)
+    
+    # 显示当前持仓
+    st.subheader("📊 当前持仓")
+    
+    # 创建数据库会话
+    session = db_manager.create_session()
+    
+    try:
+        # 获取账户的投资组合
+        portfolios = get_portfolios_by_account(session, account_id)
+        if portfolios:
+            portfolio = portfolios[0]
+            portfolio_id = portfolio.portfolio_id
+            
+            # 获取当前持仓
+            positions = get_positions_by_portfolio(session, portfolio_id)
+            
+            if positions:
+                # 显示持仓表格
+                position_data = []
+                for pos in positions:
+                    profit_color = "green" if pos.profit_loss > 0 else "red"
+                    position_data.append({
+                        "股票代码": pos.code,
+                        "股票名称": pos.name,
+                        "持仓数量": pos.quantity,
+                        "成本价": pos.price,
+                        "当前价": pos.market_price,
+                        "持仓价值": pos.value,
+                        "盈亏金额": pos.profit_loss,
+                        "盈亏比例": pos.profit_loss_pct
+                    })
+                
+                df = pd.DataFrame(position_data)
+                
+                # 格式化显示
+                st.dataframe(
+                    df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "成本价": st.column_config.NumberColumn(format="¥%.2f"),
+                        "当前价": st.column_config.NumberColumn(format="¥%.2f"),
+                        "持仓价值": st.column_config.NumberColumn(format="¥%.2f"),
+                        "盈亏金额": st.column_config.NumberColumn(format="¥%.2f"),
+                        "盈亏比例": st.column_config.NumberColumn(format="%.2f%%")
                     }
-                    
-                    # 添加到交易历史的开头
-                    st.session_state.trade_history.insert(0, trade_record)
-                    
-                    # 限制历史记录数量
-                    if len(st.session_state.trade_history) > 50:
-                        st.session_state.trade_history = st.session_state.trade_history[:50]
-                    
-                    # 显示交易成功消息
-                    st.success(result["message"])
-                    
-                    # 使用折叠面板显示交易详情
-                    with st.expander("交易详情", expanded=True):
-                        col1, col2 = st.columns(2)
+                )
+                
+                # 计算盈亏按钮
+                if st.button("🔄 计算盈亏", type="primary"):
+                    with st.spinner("正在刷新最新价格并计算盈亏..."):
+                        # 刷新持仓价格
+                        updated_positions = refresh_position_prices(session, positions)
+                        session.commit()
                         
-                        with col1:
-                            st.markdown(f"**交易时间:** {result['timestamp']}")
-                            st.markdown(f"**交易类型:** {result['trade_type']}")
-                            st.markdown(f"**股票代码:** {result['code']}")
-                            st.markdown(f"**股票名称:** {result['name']}")
-                            st.markdown(f"**交易价格:** ¥{result['price']:.2f}")
-                        
-                        with col2:
-                            st.markdown(f"**交易数量:** {result['quantity']} 股")
-                            st.markdown(f"**交易金额:** ¥{result['trade_amount']:,.2f}")
-                            st.markdown(f"**现金余额:** ¥{result['cash_after']:,.2f}")
-                            
-                            # 根据交易类型显示不同的信息
-                            if trade_type == "买入":
-                                st.markdown(f"**当前价格:** ¥{result['market_price']:.2f}")
-                            else:
-                                st.markdown(f"**持仓价格:** ¥{result['holding_price']:.2f}")
-                                st.markdown(f"**剩余持仓:** {result['remaining_quantity']} 股")
-                        
-                        # 显示盈亏信息
-                        profit_color = "green" if result['profit_loss'] > 0 else "red"
-                        st.markdown(f"**盈亏金额:** <span style='color:{profit_color};font-weight:bold'>¥{result['profit_loss']:,.2f}</span>", unsafe_allow_html=True)
-                        st.markdown(f"**盈亏比例:** <span style='color:{profit_color};font-weight:bold'>{result['profit_loss_pct']:.2f}%</span>", unsafe_allow_html=True)
-                        
-                        # 显示投资组合总价值和总收益率
-                        st.markdown(f"**投资组合总价值:** ¥{result['portfolio_value']:,.2f}")
-                        
-                        total_return_color = "green" if result['total_return'] > 0 else "red"
-                        st.markdown(f"**总收益:** <span style='color:{total_return_color};font-weight:bold'>¥{result['total_return']:,.2f}</span>", unsafe_allow_html=True)
-                        st.markdown(f"**总收益率:** <span style='color:{total_return_color};font-weight:bold'>{result['total_return_pct']:.2f}%</span>", unsafe_allow_html=True)
-                    
-                    # 显示提示信息
-                    st.info("交易已成功执行，投资组合概览页面将自动更新。")
-                    
-                    # 刷新会话状态中的数据
-                    if 'load_portfolio_data' in st.session_state:
-                        portfolio_data, positions_data = st.session_state.load_portfolio_data(account_id, start_date, end_date)
-                        st.session_state.portfolio_data = portfolio_data
-                        st.session_state.positions_data = positions_data
-                    
-                    # 刷新页面以显示最新的账户余额
-                    st.rerun()
-                else:
-                    # 显示交易失败消息
-                    st.error(result)
-    
-    # 交易记录部分
-    st.subheader("📋 近期交易记录")
-    
-    # 初始化交易历史记录
-    if 'trade_history' not in st.session_state:
-        st.session_state.trade_history = []
-    
-    # 如果有交易记录，显示交易历史表格
-    if st.session_state.trade_history:
-        trade_df = pd.DataFrame(st.session_state.trade_history)
-        
-        # 格式化交易记录显示
-        st.dataframe(
-            trade_df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "timestamp": "交易时间",
-                "trade_type": "交易类型",
-                "code": "股票代码",
-                "name": "股票名称",
-                "price": st.column_config.NumberColumn("交易价格", format="¥%.2f"),
-                "quantity": "交易数量",
-                "trade_amount": st.column_config.NumberColumn("交易金额", format="¥%.2f"),
-                "profit_loss": st.column_config.NumberColumn("盈亏金额", format="¥%.2f"),
-                "profit_loss_pct": st.column_config.NumberColumn("盈亏比例", format="%.2f%%")
-            }
-        )
-    else:
-        st.info("暂无交易记录。")
-    
-    # 账户管理部分
-    st.subheader("💼 账户管理")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # 显示当前账户信息（从数据库获取）
-        st.markdown(f"**账户ID:** {account_id}")
-        st.markdown(f"**当前日期:** {datetime.now().strftime('%Y-%m-%d')}")
-        st.markdown(f"**账户余额:** ¥{current_cash:,.2f}")
-        st.markdown(f"**投资组合总价值:** ¥{portfolio_value:,.2f}")
-    
-    with col2:
-        # 初始化账户按钮
-        if st.button("🔄 初始化账户", type="secondary"):
-            try:
-                with st.spinner("正在初始化账户..."):
-                    # 创建数据库会话
-                    db_session = db_manager.create_session()
-                    
-                    # 检查是否已存在投资组合
-                    existing_portfolios = get_portfolios_by_account(db_session, account_id)
-                    
-                    if not existing_portfolios:
-                        # 创建新的投资组合
+                        # 重新显示持仓
+                        st.success("盈亏计算完成！")
+                        st.rerun()
+            else:
+                st.info("暂无持仓。")
+        else:
+            st.info("暂无投资组合，请先初始化账户。")
+            
+            # 初始化账户按钮
+            if st.button("🔄 初始化账户"):
+                try:
+                    with st.spinner("正在初始化账户..."):
                         from db_schema import insert_portfolio_and_positions
                         initial_portfolio = {
                             "total_value": 100000.00,
@@ -587,42 +503,17 @@ def show_trade_operations(account_id, start_date, end_date):
                             "initial_capital": 100000.00,
                             "total_return": 0.0
                         }
-                        insert_portfolio_and_positions(db_session, account_id, initial_portfolio, account_info)
-                        
-                        # 重置交易历史
-                        st.session_state.trade_history = []
-                        
+                        insert_portfolio_and_positions(session, account_id, initial_portfolio, account_info)
                         st.success("账户初始化成功！已设置初始资金10万元。")
-                        st.rerun()  # 重新加载页面以显示更新后的账户信息
-                    else:
-                        st.warning("账户已初始化，无需重复操作。")
-            except Exception as e:
-                logger.error(f"账户初始化失败: {str(e)}")
-                st.error(f"账户初始化失败: {str(e)}")
-            finally:
-                if 'db_session' in locals():
-                    db_session.close()
-        
-        # 重置交易记录按钮
-        if st.button("🗑️ 重置交易记录", type="secondary"):
-            if st.session_state.trade_history:
-                # Streamlit没有confirm_dialog函数，使用button组代替
-                confirm_container = st.container()
-                with confirm_container:
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        confirm = st.button("确认重置", type="primary")
-                    with col2:
-                        cancel = st.button("取消")
-                    
-                    if confirm:
-                        st.session_state.trade_history = []
-                        st.success("交易记录已重置。")
                         st.rerun()
-                    elif cancel:
-                        confirm_container.empty()
-            else:
-                st.info("当前没有交易记录需要重置。")
+                except Exception as e:
+                    logger.error(f"账户初始化失败: {str(e)}")
+                    st.error(f"账户初始化失败: {str(e)}")
+    except Exception as e:
+        logger.error(f"获取持仓信息失败: {str(e)}")
+        st.error(f"获取持仓信息失败: {str(e)}")
+    finally:
+        session.close()
     
     # 交易提示
     st.subheader("💡 交易提示")
@@ -631,5 +522,5 @@ def show_trade_operations(account_id, start_date, end_date):
     - 交易前请确认您的账户余额充足
     - 卖出前请确认您持有足够的股票数量
     - 实际交易价格以市场成交价为准
-    - 系统将自动计算盈亏并更新投资组合价值
+    - 点击"计算盈亏"按钮可刷新最新价格并重新计算盈亏
     """)

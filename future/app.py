@@ -10,6 +10,7 @@ import time
 import plotly.express as px
 import plotly.graph_objects as go
 from sqlalchemy import func
+from db_tools import DatabaseTools
 
 # 设置中文字体支持
 plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
@@ -21,8 +22,10 @@ from db_schema import (
     get_portfolios_by_account, 
     get_positions_by_portfolio,
     Portfolio,
-    Position
+    Position,
+    Base  # 添加Base导入
 )
+from sqlalchemy.orm import sessionmaker  # 添加sessionmaker导入
 
 # 导入推荐系统相关功能
 from auto_recommendation_with_db import get_stock_pool, KlineFetcher
@@ -53,6 +56,46 @@ DB_PATH = 'investment_portfolio.db'
 
 # 创建数据库管理器实例
 db_manager = DatabaseManager(DB_PATH)
+
+def reinitialize_portfolio_tables(account_id):
+    """
+    注意：这将删除所有现有的投资组合和持仓数据
+    """
+    db_tools = DatabaseTools(db_manager)
+    try:
+        # 删除所有持仓记录
+        with db_manager.SessionLocal() as session:
+            session.query(Position).delete()
+            session.commit()
+            logger.info("所有持仓记录已删除")
+        
+        # 删除所有投资组合记录
+        with db_manager.SessionLocal() as session:
+            session.query(Portfolio).delete()
+            session.commit()
+            logger.info("所有投资组合记录已删除")
+        sample_portfolio = {
+            "total_value": 120000.00,
+            "cash": 120000.00,
+            "positions": []
+        }
+        sample_account_info = {
+            "initial_capital": 120000.00,
+            "total_return": 0.0
+        }
+        
+        # 插入投资组合数据
+        portfolio_id = db_tools.insert_portfolio_and_positions(account_id, sample_portfolio, sample_account_info)
+        print(f"投资组合数据已插入，ID: {portfolio_id}")
+        
+        # 查询投资组合
+        portfolios = get_portfolios_by_account(db_manager.create_session(), account_id)
+        print(f"查询到{len(portfolios)}个投资组合记录")
+        return True, "投资组合和持仓表已成功重新初始化"
+    except Exception as e:
+        logger.exception(f"重新初始化表失败: {str(e)}")
+        return False, f"重新初始化表失败: {str(e)}"
+
 
 def create_db_session():
     """
@@ -206,6 +249,17 @@ with st.sidebar:
     # 关于部分
     st.header("📝 关于")
     st.info("这是一个股票投资组合分析仪表板，用于展示持仓情况、盈亏分析和投资建议。")
+    
+    # 数据库重置按钮
+    st.markdown("---")
+    st.header("⚠️ 数据库操作")
+    if st.button("重新初始化投资组合表", type="secondary"):
+        # 添加确认对话框（使用标准Streamlit组件）
+        success, message = reinitialize_portfolio_tables(account_id)
+        if success:
+            st.success(message)
+        else:
+            st.error(message)
 
 # 初始化会话状态
 if 'portfolio_data' not in st.session_state:

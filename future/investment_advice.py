@@ -17,8 +17,13 @@ def generate_investment_recommendations(account_id, db_manager=None):
         logger.info(f"为账户 {account_id} 生成投资建议")
         
         # 这里应该调用AI推荐系统
+        # 查询账户持仓情况
+        holdings = db_manager.get_holdings(account_id) if db_manager else []
+        st.info(holdings)
+        # 构建包含持仓信息的提示
+        prompt = get_trading_prompt(account_id, holdings)
         # 暂时返回模拟的建议结果
-        recommendations = get_ai_recommendation(account_id, get_trading_prompt(account_id))
+        recommendations = get_ai_recommendation(get_trading_prompt(account_id))
         
         logger.info(f"成功生成 {len(recommendations)} 条投资建议")
         return recommendations

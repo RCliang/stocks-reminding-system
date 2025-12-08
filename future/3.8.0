@@ -1,0 +1,9 @@
+Looking in indexes: https://mirrors.aliyun.com/pypi/simple
+Collecting protobuf==3.*
+  Downloading https://mirrors.aliyun.com/pypi/packages/8d/14/619e24a4c70df2901e1f4dbc50a6291eb63a759172558df326347dce1f0d/protobuf-3.20.3-py2.py3-none-any.whl (162 kB)
+Installing collected packages: protobuf
+  Attempting uninstall: protobuf
+    Found existing installation: protobuf 6.33.1
+    Uninstalling protobuf-6.33.1:
+      Successfully uninstalled protobuf-6.33.1
+Successfully installed protobuf-3.20.3

@@ -81,6 +81,27 @@ class Position(Base):
         Index('idx_portfolio_code', 'portfolio_id', 'code'),
     )
 
+# 定义股票日线数据
+class Stock(Base):
+    __tablename__ = 'stocks'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String, nullable=False, index=True)
+    name = Column(String, nullable=False)
+    time_key = Column(DateTime, nullable=False, index=True)
+    open = Column(Float, nullable=False)
+    close = Column(Float, nullable=False)
+    high = Column(Float, nullable=False)
+    low = Column(Float, nullable=False)
+    pe_ratio = Column(Float, nullable=True)
+    volume = Column(Float, nullable=False)
+    turnover_rate = Column(Float, nullable=True)
+    turnover = Column(Float, nullable=True)
+    change_rate = Column(Float, nullable=True)
+
+    class Config:
+        orm_mode = True
+
 # 数据库连接类
 class DatabaseManager:
     def __init__(self, db_file='investment_portfolio.db'):
@@ -337,6 +358,116 @@ def insert_position(db_session, portfolio_id, account_id, position_data):
     except Exception as e:
         db_session.rollback()
         logger.exception(f"插入持仓记录失败: {str(e)}")
+        raise
+
+def get_stock_data(db_session, stock_code):
+    """查询股票数据
+    参数:
+        db_session: 数据库会话对象
+        stock_code: 股票代码
+    返回:
+        股票数据字典
+    """
+    try:
+        stock = db_session.query(Stock).filter(Stock.code == stock_code).first()
+        if stock:
+            return stock.__dict__
+        else:
+            logger.warning(f"未找到股票{stock_code}")
+            return None
+    except Exception as e:
+        logger.exception(f"查询股票数据失败: {str(e)}")
+        raise
+
+def update_stock(db_session, stock_data):
+    """更新股票数据
+    
+    参数:
+        db_session: 数据库会话对象
+        stock_data: 股票数据字典
+    """
+    try:
+        stock = db_session.query(Stock).filter(Stock.code == stock_data['code']).first()
+        if stock:
+            for key, value in stock_data.items():
+                if hasattr(stock, key):
+                    setattr(stock, key, value)
+            db_session.commit()
+            logger.info(f"成功更新股票{stock_data['code']}")
+            return True
+        else:
+            logger.warning(f"未找到股票{stock_data['code']}")
+            return False
+    except Exception as e:
+        db_session.rollback()
+        logger.exception(f"更新股票数据失败: {str(e)}")
+        raise
+
+def delete_stock_data(db_session, stock_code):
+    """删除股票数据
+    
+    参数:
+        db_session: 数据库会话对象
+        stock_code: 股票代码
+    """
+    try:
+        stock = db_session.query(Stock).filter(Stock.code == stock_code).first()
+        if stock:
+            db_session.delete(stock)
+            db_session.commit()
+            logger.info(f"成功删除股票{stock_code}")
+            return True
+        else:
+            logger.warning(f"未找到股票{stock_code}")
+            return False
+    except Exception as e:
+        db_session.rollback()
+        logger.exception(f"删除股票数据失败: {str(e)}")
+        raise
+
+def insert_stock_kline(db_session, stock_data):
+    """插入股票数据
+    
+    参数:
+        db_session: 数据库会话对象
+        stock_data: 股票数据字典
+    """
+    try:
+        stock = Stock(**stock_data)
+        db_session.add(stock)
+        db_session.commit()
+        logger.info(f"成功插入股票{stock_data['code']}")
+        return True
+    except Exception as e:
+        db_session.rollback()
+        logger.exception(f"插入股票数据失败: {str(e)}")
+        raise
+
+def get_latest_date_for_stock(db_session, stock_code):
+    """查询某个股票在表中最新的日期
+    
+    参数:
+        db_session: 数据库会话对象
+        stock_code: 股票代码
+    
+    返回:
+        最新日期字符串，格式为 'YYYY-MM-DD'；若未找到则返回 None
+    """
+    try:
+        latest_record = (
+            db_session.query(Position)
+            .filter(Position.code == stock_code)
+            .order_by(Position.date.desc())
+            .first()
+        )
+        if latest_record:
+            logger.info(f"股票 {stock_code} 最新持仓日期为 {latest_record.date}")
+            return latest_record.date
+        else:
+            logger.warning(f"未找到股票 {stock_code} 的持仓记录")
+            return None
+    except Exception as e:
+        logger.exception(f"查询股票 {stock_code} 最新日期失败: {str(e)}")
         raise
 
 def get_positions_by_account(db_session, account_id, start_date=None, end_date=None, code=None):
