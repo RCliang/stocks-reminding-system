@@ -2,6 +2,7 @@ from db_schema import Stock, Base, DatabaseManager, insert_stock_kline
 from fetch_kline_daily import get_stock_pool, KlineFetcher
 from datetime import datetime
 from db_tools import DatabaseTools
+import pandas as pd
 
 daily_columns = ['code', 'name', 'update_time', 'last_price', 'open_price', 'high_price', \
     'low_price', 'pe_ratio', 'volume', 'turnover', 'turnover_rate']
@@ -26,18 +27,18 @@ if __name__ == "__main__":
 
     count=1
     try:
-        data = db_tools.get_portfolios_by_account("user_001")
-        # 如果数据库返回的是 datetime 对象，则格式化为字符串
-        # 展示查询到的投资组合数据
-        data2 = db_tools.get_positions_by_portfolio("port_user_001_2025-12-01_1764591628")
-        if data:
-            print(f"查询到 {len(data)} 条投资组合记录：")
-            for portfolio_dict in data:
-                print(portfolio_dict)
-        if data2:
-            print(f"查询到 {len(data2)} 条持仓记录：")
-            for position_dict in data2:
-                print(position_dict)
+        # data = db_tools.get_portfolios_by_account("user_001")
+        # # 如果数据库返回的是 datetime 对象，则格式化为字符串
+        # # 展示查询到的投资组合数据
+        # data2 = db_tools.get_positions_by_portfolio("port_user_001_2025-12-01_1764591628")
+        latest_date = db_tools.get_latest_date_for_stock('SZ.002466')
+        if latest_date:
+            # print(f"查询到 {len(data)} 条股票数据记录：")
+            print(f"data: {latest_date}")
+        # if data2:
+        #     print(f"查询到 {len(data2)} 条持仓记录：")
+        #     for position_dict in data2:
+        #         print(position_dict)
         else:
             print("未查询到任何持仓数据")   
     except Exception as e:

@@ -179,8 +179,8 @@ def main():
         try:
             reasoning_content, content = get_ai_recommendation(sample_prompt)
             logger.info("获取AI推荐完成")
-            logger.debug(f"reasoning_content:\n{reasoning_content}")
-            logger.debug(f"content:\n{content}")
+            logger.info(f"reasoning_content:\n{reasoning_content}")
+            logger.info(f"content:\n{content}")
         except Exception as e:
             logger.exception(f"获取AI推荐时发生异常: {str(e)}")
         
@@ -289,7 +289,7 @@ def view_portfolio_history(account_id=None):
 
 if __name__ == "__main__":
     # 执行主程序
-    main()
-    
+    # main()
+    view_portfolio_history()
     # 查看投资组合历史（可选）
     # view_portfolio_history()

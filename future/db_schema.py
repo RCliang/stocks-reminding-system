@@ -20,6 +20,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.sql import func
 import datetime
+import pandas as pd
 import time
 import logging
 
@@ -360,23 +361,53 @@ def insert_position(db_session, portfolio_id, account_id, position_data):
         logger.exception(f"插入持仓记录失败: {str(e)}")
         raise
 
-def get_stock_data(db_session, stock_code):
+def get_stock_data(db_session, stock_code, limit=100):
     """查询股票数据
     参数:
         db_session: 数据库会话对象
         stock_code: 股票代码
+        limit: 查询数据量限制
     返回:
-        股票数据字典
+        股票数据字典列表，如果未找到数据则返回空列表
+    """
+    try:
+        stock_records = db_session.query(Stock).filter(Stock.code == stock_code).order_by(desc(Stock.time_key)).limit(limit).all()
+        if stock_records:
+            logger.info(f"查询到 {len(stock_records)} 条股票数据记录")
+            # 转换为字典列表而不是DataFrame，避免布尔上下文歧义问题
+            stock_data = []
+            for record in stock_records:
+                # 安全地获取属性字典并复制
+                record_dict = record.__dict__.copy()
+                # 移除SQLAlchemy内部状态键
+                record_dict.pop('_sa_instance_state', None)
+                stock_data.append(record_dict)
+            return stock_data
+        else:
+            logger.warning(f"未找到股票{stock_code}")
+            return []  # 返回空列表而不是None，更安全
+    except Exception as e:
+        logger.exception(f"查询股票数据失败: {str(e)}")
+        raise
+
+def get_stock_name(db_session, stock_code):
+    """查询股票名称
+    
+    参数:
+        db_session: 数据库会话对象
+        stock_code: 股票代码
+    返回:
+        股票名称字符串，如果未找到则返回空字符串
     """
     try:
         stock = db_session.query(Stock).filter(Stock.code == stock_code).first()
         if stock:
-            return stock.__dict__
+            return stock.name
         else:
             logger.warning(f"未找到股票{stock_code}")
-            return None
+            return ""
     except Exception as e:
-        logger.exception(f"查询股票数据失败: {str(e)}")
+        logger.exception(f"查询股票名称失败: {str(e)}")
         raise
 
 def update_stock(db_session, stock_data):
@@ -443,6 +474,38 @@ def insert_stock_kline(db_session, stock_data):
         logger.exception(f"插入股票数据失败: {str(e)}")
         raise
 
+def clean_expired_data(db_session):
+    """清理过期数据和Stock表重复数据
+    
+    参数:
+        db_session: 数据库会话对象
+    """
+    try:
+        # 生成当前日期
+        current_date = datetime.datetime.now().strftime('%Y-%m-%d')
+        # 然后删除所有不在保留列表中的记录
+        from sqlalchemy import func
+        
+        # 获取需要保留的记录ID
+        subquery = db_session.query(
+            func.max(Stock.id).label('max_id')
+        ).group_by(
+            Stock.code,
+            Stock.time_key
+        ).subquery()
+        
+        # 删除重复记录，只保留每组中ID最大的那条
+        deleted_count = db_session.query(Stock).filter(
+            ~Stock.id.in_(db_session.query(subquery.c.max_id))
+        ).delete(synchronize_session=False)
+        
+        db_session.commit()
+        logger.info(f"成功清理过期持仓记录和Stock表重复数据，删除了{deleted_count}条重复记录")
+    except Exception as e:
+        db_session.rollback()
+        logger.exception(f"清理数据失败: {str(e)}")
+        raise
+
 def get_latest_date_for_stock(db_session, stock_code):
     """查询某个股票在表中最新的日期
     
@@ -455,14 +518,14 @@ def get_latest_date_for_stock(db_session, stock_code):
     """
     try:
         latest_record = (
-            db_session.query(Position)
-            .filter(Position.code == stock_code)
-            .order_by(Position.date.desc())
+            db_session.query(Stock)
+            .filter(Stock.code == stock_code)
+            .order_by(Stock.time_key.desc())
             .first()
         )
         if latest_record:
-            logger.info(f"股票 {stock_code} 最新持仓日期为 {latest_record.date}")
-            return latest_record.date
+            logger.info(f"股票 {stock_code} 最新持仓日期为 {latest_record.time_key}")
+            return latest_record.time_key
         else:
             logger.warning(f"未找到股票 {stock_code} 的持仓记录")
             return None

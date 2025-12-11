@@ -40,6 +40,31 @@ def get_stock_pool(pool_name="全部"):
     quote_ctx.close()
     return res
 
+def get_market_place():
+    stock_pool = get_stock_pool("etf")
+    sample_market_state = {}
+    fetcher = KlineFetcher(stock_pool.keys(), daily_columns, hist_columns, 'data')
+    data = fetcher.hist_kline_persistence('kline_etf_data')
+    print(data.columns)
+    for code, name in stock_pool.items():
+        print(code, name)
+        tmp = data[data.code == code]
+        tmp = tmp.sort_values(by='time_key')
+        tmp['sma_7'] = ta.SMA(tmp['close'].values, timeperiod=7)
+        tmp['sma_14'] = ta.SMA(tmp['close'].values, timeperiod=14)
+        tmp['rsi_14'] = ta.RSI(tmp['close'].values, timeperiod=14)
+        sample_market_state[code] = {
+            'price': tmp['close'].values[-1],
+            'change_24h': tmp['change_rate'].values[-1],
+            'indicators': {
+                'sma_7': tmp['sma_7'].values[-1],
+                'sma_14': tmp['sma_14'].values[-1],
+                'rsi_14': tmp['rsi_14'].values[-1],
+            }
+        }
+    print(sample_market_state)
+    return sample_market_state
+
 def main():
     stock_pool = get_stock_pool("etf")
     sample_market_state = {}

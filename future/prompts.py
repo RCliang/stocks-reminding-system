@@ -31,7 +31,7 @@ def get_trading_prompt(market_state: dict, account_info: dict, portfolio: dict) 
     交易规则如下:
     1. 信号: buy_to_enter (long), sell(if hold), close_position, hold
     2. 风险管理:
-    - 最大持仓数量: 3个
+    - 最大持仓数量: 4个
     - 每次交易风险: 1-5%
     3. 仓位-sizing:
     - 保守: 1-2%风险

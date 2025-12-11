@@ -67,6 +67,14 @@ def update_kline_data(code_list, db_manager=None):
         logger.exception(f"更新K线数据失败: {str(e)}")
         return []
 
+def clean_expired_data():
+    """
+    清理过期数据
+    """
+    db_tools = DatabaseTools('investment_portfolio.db')
+    db_tools.clean_expired_data()
+    return
+
 def show_data_update():
     """
     显示数据更新页面
@@ -265,7 +273,7 @@ def show_data_update():
     with col1:
         if st.button("🧹 清理过期数据", type="secondary", use_container_width=True):
             with st.spinner("清理过期数据..."):
-                time.sleep(1)
+                clean_expired_data()
                 st.success("✅ 过期数据清理完成")
     
     with col2:

@@ -1,5 +1,6 @@
 # 数据库工具类 - 封装db_schema.py中的所有数据操作方法
-
+import talib as ta
+import pandas as pd
 from db_schema import (
     DatabaseManager,
     insert_portfolio_and_positions,
@@ -10,7 +11,9 @@ from db_schema import (
     insert_position,
     get_stock_data,
     update_stock,
+    get_stock_name,
     delete_stock_data,
+    clean_expired_data,
     insert_stock_kline,
     get_latest_date_for_stock,
     get_positions_by_account,
@@ -19,13 +22,31 @@ from db_schema import (
     Portfolio
 )
 from sqlalchemy import func
+from futu import OpenQuoteContext, RET_OK
 import logging
 from contextlib import contextmanager
+from fetch_kline_daily import get_market_snapshot
+
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+
+def get_stock_pool(pool_name="全部"):
+    quote_ctx = OpenQuoteContext(host='127.0.0.1', port=11111)
+    ret, data = quote_ctx.get_user_security(pool_name)
+    if ret == RET_OK:
+        # print(data)
+        if data.shape[0] > 0:  # 如果自选股列表不为空
+            res = {code: name for name, code in zip(data['name'].values.tolist(), data['code'].values.tolist())}
+        else:
+            res = []
+    else:
+        print('error:', data)
+        res = []
+    quote_ctx.close()
+    return res
 class DatabaseTools:
     """
     数据库操作工具类，封装了db_schema.py中的所有数据增删改查方法
@@ -48,7 +69,7 @@ class DatabaseTools:
             # 假设是数据库文件路径
             self.db_manager = DatabaseManager(db_file_or_manager)
             self.db_manager.init_db()
-    
+
     @contextmanager
     def get_session(self):
         """
@@ -140,12 +161,12 @@ class DatabaseTools:
         with self.get_session() as session:
             return insert_position(session, portfolio_id, account_id, position_data)
     
-    def get_stock_data(self, stock_code):
+    def get_stock_data(self, stock_code, limit=100):
         """
         查询股票数据
         """
         with self.get_session() as session:
-            return get_stock_data(session, stock_code)
+            return get_stock_data(session, stock_code, limit)
     
     def update_stock(self, stock_data):
         """
@@ -246,6 +267,44 @@ class DatabaseTools:
         with self.get_session() as session:
             return insert_portfolio_and_positions(session, account_id, portfolio_data, account_info)
 # 示例使用代码
+    def get_market_place(self):
+        stock_pool = get_stock_pool("etf")
+        sample_market_state = {}
+        for code, name in stock_pool.items():
+            print(code, name)
+            tmp_data = self.get_stock_data(code, limit=100)
+            tmp_data = pd.DataFrame(tmp_data)
+            tmp = tmp_data.sort_values(by='time_key')
+            tmp['sma_5'] = ta.SMA(tmp['close'].values, timeperiod=5)
+            tmp['sma_10'] = ta.SMA(tmp['close'].values, timeperiod=10)
+            tmp['sma_20'] = ta.SMA(tmp['close'].values, timeperiod=20)
+            tmp['rsi_14'] = ta.RSI(tmp['close'].values, timeperiod=14)
+            sample_market_state[code] = {
+                'last_price': tmp['close'].values[-1],
+                'change_24h': tmp['change_rate'].values[-1],
+                'now_price': get_market_snapshot(code),
+                'indicators': {
+                    'sma_5': tmp['sma_5'].values[-1],
+                    'sma_10': tmp['sma_10'].values[-1],
+                    'sma_20': tmp['sma_20'].values[-1], 
+                    'rsi_14': tmp['rsi_14'].values[-1],
+                }
+            }
+        print(sample_market_state)
+        return sample_market_state
+    def clean_expired_data(self):
+        """
+        清理过期数据
+        """
+        with self.get_session() as session:
+            clean_expired_data(session)
+    def get_stock_name(self, stock_code):
+        """
+        查询股票名称
+        """
+        with self.get_session() as session:
+            return get_stock_name(session, stock_code)
+
 def example_usage():
     """示例使用方法"""
     try:
