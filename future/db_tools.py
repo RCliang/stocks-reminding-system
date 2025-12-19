@@ -266,7 +266,6 @@ class DatabaseTools:
         """
         with self.get_session() as session:
             return insert_portfolio_and_positions(session, account_id, portfolio_data, account_info)
-# 示例使用代码
     def get_market_place(self):
         stock_pool = get_stock_pool("etf")
         sample_market_state = {}

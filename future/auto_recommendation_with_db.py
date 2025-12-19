@@ -1,6 +1,6 @@
 # 带数据库功能的自动推荐程序示例 - 使用SQLAlchemy ORM
 
-from prompts import get_trading_prompt
+# from prompts import get_trading_prompt
 import talib as ta
 import pandas as pd
 import json

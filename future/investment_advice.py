@@ -7,10 +7,11 @@ import json_repair
 import time
 from outlines import Template
 from pathlib import Path
-from utils import get_ai_recommendation
-from prompts import get_trading_prompt
+from utils import get_ai_recommendation, search_stock_info
 from db_tools import DatabaseTools
 from fetch_kline_daily import get_market_snapshot
+from utils import StockAna
+from datetime import datetime, timedelta
 # 配置日志
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ def generate_investment_recommendations(account_id):
                 'value': get_market_snapshot(item['code']),
             })
         market_state = db_manager.get_market_place()
-        template = Template.from_file(Path("trading_prompt.jinja"))
+        template = Template.from_file(Path("prompts/trading_prompt.jinja"))
         prompt = template(market_state=market_state, account_info=account_info, portfolio=portfolio)
         st.markdown(prompt)
         # 暂时返回模拟的建议结果
@@ -55,17 +56,30 @@ def generate_investment_recommendations(account_id):
         logger.exception(f"生成投资建议失败: {str(e)}")
         return [], []
 
+def init_session_state():
+    """初始化会话状态"""
+    if 'investment_recommendations' not in st.session_state:
+        st.session_state.investment_recommendations = []
+    if 'basic_data' not in st.session_state:
+        st.session_state.basic_data = ''
+    if 'stock_advice' not in st.session_state:
+        st.session_state.stock_advice = ''
+    if 'indicator' not in st.session_state:
+        st.session_state.indicator = {}
+    return
+
 def show_investment_advice(account_id):
     """
     显示投资建议页面
     """
+    init_session_state()
     st.header("💡 投资建议")
     
     # 投资建议生成部分
     st.subheader("🔍 AI智能投资建议")
     
     # 添加生成建议按钮
-    if st.button("🚀 生成投资建议", key="generate_advice"):
+    if st.button("🚀 生成ETF投资建议", key="generate_advice"):
         with st.spinner("AI正在分析市场数据和您的投资组合..."):
             # 调用建议生成函数
             _, recommendations = generate_investment_recommendations(account_id)
@@ -198,43 +212,52 @@ def show_investment_advice(account_id):
         st.info("点击上方按钮生成AI智能投资建议。")
     
     # 市场洞察部分
-    st.subheader("📰 市场洞察")
-    
+    st.subheader("📰 个股洞察")
+    col1, col2 = st.columns(2)
+    with col1:
+        stock_code = st.text_input("请输入股票代码（例如：000001）")
+    with col2:
+        stock_name = st.text_input("请输入股票名称（例如：平安银行）")
+    stock_advice_btn = st.button("获取个股建议")
     # 创建市场洞察选项卡
-    market_tabs = st.tabs(["市场热点", "行业动态", "宏观经济", "资金流向"])
+    stock_tabs = st.tabs(["个股动态", "个股技术面", "AI建议"])
+    if stock_advice_btn:
+        if stock_code and stock_name:
+            st.write(f"正在为股票 {stock_name} ({stock_code}) 生成建议...")
+            st_ana = StockAna()
+            end_date = datetime.today().strftime('%Y-%m-%d')
+            start_date = (datetime.today() - timedelta(days=100)).strftime('%Y-%m-%d')
+            stock_name, indicator, last_price, basic_data = st_ana.get_market_place(stock_code, start_date, end_date)
+            template = Template.from_file("prompts/stock_prompt.jinja")
+            prompt = template(stock_name=stock_name, indicator=indicator, basic_data=basic_data, last_price=last_price)
+            reasoning_content, content = get_ai_recommendation(prompt)
+            st.session_state.basic_data = basic_data
+            st.session_state.stock_advice = content
+            st.session_state.indicator = indicator
+
+    with stock_tabs[0]:
+        if "basic_data" in st.session_state:
+            st.write(st.session_state.basic_data)
+        else:
+            st.info("点击获取个股建议")
     
-    with market_tabs[0]:
-        st.markdown("""
-        ### 当前市场热点
-        - **科技创新**: AI、半导体、新能源等科技领域持续受到关注
-        - **消费复苏**: 随着经济逐步恢复，消费板块迎来机会
-        - **绿色转型**: 环保、碳中和相关产业链表现活跃
-        - **数字经济**: 数字中国建设推动相关板块估值提升
-        """)
+    with stock_tabs[1]:
+        if "indicator" in st.session_state:
+            st.write(st.session_state.indicator)
+        else:
+            st.info("点击获取个股建议")
     
-    with market_tabs[1]:
-        st.markdown("""
-        ### 行业动态
-        - **新能源**: 光伏、风电等新能源板块持续高速增长
-        - **医药生物**: 创新药、医疗器械等细分领域景气度高
-        - **金融服务**: 银行估值处于历史低位，具有配置价值
-        - **TMT**: 计算机、通信、传媒等科技板块表现活跃
-        """)
+    with stock_tabs[2]:
+        if "stock_advice" in st.session_state:
+            st.markdown(st.session_state.stock_advice)
+        else:
+            st.info("点击获取个股建议")
     
-    with market_tabs[2]:
-        st.markdown("""
-        ### 宏观经济分析
-        - **经济复苏**: 国内经济逐步恢复，GDP增速稳步回升
-        - **政策支持**: 稳增长政策持续发力，财政货币政策协同
-        - **通胀预期**: 温和通胀环境有利于企业盈利修复
-        - **外部环境**: 全球经济面临不确定性，需关注美联储政策变化
-        """)
-    
-    with market_tabs[3]:
-        st.markdown("""
-        ### 资金流向
-        - **北向资金**: 近期北向资金呈现净流入态势
-        - **机构动向**: 公募基金重点配置科技成长和消费板块
-        - **融资融券**: 市场融资余额稳步上升，杠杆水平合理
-        - **板块轮动**: 资金在不同板块间轮动，寻找确定性机会
-        """)
+    # with stock_tabs[3]:
+    #     st.markdown("""
+    #     ### 资金流向
+    #     - **北向资金**: 近期北向资金呈现净流入态势
+    #     - **机构动向**: 公募基金重点配置科技成长和消费板块
+    #     - **融资融券**: 市场融资余额稳步上升，杠杆水平合理
+    #     - **板块轮动**: 资金在不同板块间轮动，寻找确定性机会
+    #     """)

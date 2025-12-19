@@ -28,8 +28,6 @@ from db_schema import (
 from sqlalchemy.orm import sessionmaker  # 添加sessionmaker导入
 
 # 导入推荐系统相关功能
-from auto_recommendation_with_db import get_stock_pool, KlineFetcher
-from prompts import get_trading_prompt
 from utils import get_ai_recommendation
 
 # 尝试导入talib，如果不可用则设置一个标志
@@ -326,7 +324,7 @@ with tabs[4]:
 
 # 添加页脚
 st.markdown("---")
-st.caption("© 2024 股票投资组合分析仪表板 | 使用Streamlit构建")
+st.caption("© 2024 股票投资组合分析仪表板")
 
 if __name__ == "__main__":
     # Streamlit应用不需要main函数调用，这里只是为了代码完整性
