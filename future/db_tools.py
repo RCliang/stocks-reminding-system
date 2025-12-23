@@ -1,4 +1,5 @@
 # 数据库工具类 - 封装db_schema.py中的所有数据操作方法
+from tarfile import data_filter
 import talib as ta
 import pandas as pd
 from db_schema import (
@@ -21,12 +22,14 @@ from db_schema import (
     Position,
     Portfolio
 )
+from outlines import Template
 from sqlalchemy import func
 from futu import OpenQuoteContext, RET_OK
 import logging
 from contextlib import contextmanager
 from fetch_kline_daily import get_market_snapshot
-
+from utils import get_ai_recommendation
+import json_repair
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -266,31 +269,56 @@ class DatabaseTools:
         """
         with self.get_session() as session:
             return insert_portfolio_and_positions(session, account_id, portfolio_data, account_info)
+    def get_tech_summary(self, stock_code):
+        tmp_data = self.get_stock_data(stock_code, limit=100)
+        tmp_data = pd.DataFrame(tmp_data)
+        df = tmp_data.sort_values(by='time_key')
+        df['ema_5'] = ta.EMA(df['close'].values, timeperiod=5)
+        df['ema_10'] = ta.EMA(df['close'].values, timeperiod=10)
+        df['ema_20'] = ta.EMA(df['close'].values, timeperiod=20)
+        df['rsi_14'] = ta.RSI(df['close'].values, timeperiod=14)
+        macd, macdsignal, macdhist = ta.MACD(
+            df['close'].values,
+            fastperiod=12,
+            slowperiod=26,
+            signalperiod=9
+        )
+        slowk, slowd = ta.STOCH(df['high'].values, df['low'].values, df['close'].values, fastk_period=9, slowk_period=3, slowd_period=3)
+        slowj = 3 * slowk - 2 * slowd
+        slowk = [str(round(x, 2)) for x in slowk]
+        slowd = [str(round(x, 2)) for x in slowd]
+        slowj = [str(round(x, 2)) for x in slowj]
+        indicator = {
+            'ema_5': df['ema_5'].iloc[-10:].tolist(),
+            'ema_10': df['ema_10'].iloc[-10:].tolist(),
+            'ema_20': df['ema_20'].iloc[-10:].tolist(),
+            'macd': macd[-10:],
+            'macdsignal': macdsignal[-10:],
+            'macdhist': macdhist[-10:],
+            'slowk': slowk[-10:],
+            'slowd': slowd[-10:],
+            'slowj': slowj[-10:],
+            'rsi_14': df['rsi_14'].iloc[-10:].tolist(),
+            'volume': df['volume'].iloc[-10:].tolist(),
+        }
+        last_price = get_market_snapshot(stock_code)
+        return indicator, last_price
+
     def get_market_place(self):
         stock_pool = get_stock_pool("etf")
-        sample_market_state = {}
+        tech_sum = dict()
         for code, name in stock_pool.items():
             print(code, name)
-            tmp_data = self.get_stock_data(code, limit=100)
-            tmp_data = pd.DataFrame(tmp_data)
-            tmp = tmp_data.sort_values(by='time_key')
-            tmp['sma_5'] = ta.SMA(tmp['close'].values, timeperiod=5)
-            tmp['sma_10'] = ta.SMA(tmp['close'].values, timeperiod=10)
-            tmp['sma_20'] = ta.SMA(tmp['close'].values, timeperiod=20)
-            tmp['rsi_14'] = ta.RSI(tmp['close'].values, timeperiod=14)
-            sample_market_state[code] = {
-                'last_price': tmp['close'].values[-1],
-                'change_24h': tmp['change_rate'].values[-1],
-                'now_price': get_market_snapshot(code),
-                'indicators': {
-                    'sma_5': tmp['sma_5'].values[-1],
-                    'sma_10': tmp['sma_10'].values[-1],
-                    'sma_20': tmp['sma_20'].values[-1], 
-                    'rsi_14': tmp['rsi_14'].values[-1],
-                }
-            }
-        print(sample_market_state)
-        return sample_market_state
+            indicator, last_price = self.get_tech_summary(code)
+            template = Template.from_file("prompts/single_etf_ana.jinja")
+            prompt = template(
+                stock_code=code,
+                indicator=indicator,
+                last_price=last_price
+            )
+            _, tmp = get_ai_recommendation(prompt, system_prompt="你是一个专业的股票技术分析师")
+            tech_sum[code] = json_repair.loads(tmp)['conclusion']
+        return tech_sum
     def clean_expired_data(self):
         """
         清理过期数据

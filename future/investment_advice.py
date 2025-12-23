@@ -15,6 +15,32 @@ from datetime import datetime, timedelta
 # 配置日志
 logger = logging.getLogger(__name__)
 
+def get_portfolio_info(account_id):
+    """
+    获取账户持仓信息
+    """
+    db_manager = DatabaseTools()
+    portfolios = db_manager.get_portfolios_by_account(account_id) if db_manager else []
+    # 构建包含持仓信息的提示
+    account_info = dict[Any, Any]()
+    account_info['initial_capital'] = portfolios[0]['initial_capital']
+    account_info['total_return'] = portfolios[0]['total_return'] / account_info['initial_capital']
+    positions = db_manager.get_positions_by_portfolio(portfolios[0]['portfolio_id'])
+    portfolio = dict[Any, Any]()
+    portfolio['total_value'] = portfolios[0]['total_value']
+    portfolio['cash'] = portfolios[0]['cash']
+    portfolio['positions'] = []
+    for item in positions:
+        portfolio['positions'].append({
+            'name': item['name'],
+            'code': item['code'],
+            'price': item['price'],
+            'quantity': item['quantity'],
+            'value': get_market_snapshot(item['code']),
+        })
+    return account_info, portfolio
+
+
 def generate_investment_recommendations(account_id):
     """
     生成投资建议
@@ -25,30 +51,13 @@ def generate_investment_recommendations(account_id):
         
         # 这里应该调用AI推荐系统
         # 查询账户持仓情况
-        portfolios = db_manager.get_portfolios_by_account(account_id) if db_manager else []
-        # 构建包含持仓信息的提示
-        account_info = dict[Any, Any]()
-        account_info['initial_capital'] = portfolios[0]['initial_capital']
-        account_info['total_return'] = portfolios[0]['total_return'] / account_info['initial_capital']
-        positions = db_manager.get_positions_by_portfolio(portfolios[0]['portfolio_id'])
-        portfolio = dict[Any, Any]()
-        portfolio['total_value'] = portfolios[0]['total_value']
-        portfolio['cash'] = portfolios[0]['cash']
-        portfolio['positions'] = []
-        for item in positions:
-            portfolio['positions'].append({
-                'name': item['name'],
-                'code': item['code'],
-                'quantity': item['quantity'],
-                'value': get_market_snapshot(item['code']),
-            })
-        market_state = db_manager.get_market_place()
+        account_info, portfolio = get_portfolio_info(account_id)
+        tech_sum = db_manager.get_market_place()
         template = Template.from_file(Path("prompts/trading_prompt.jinja"))
-        prompt = template(market_state=market_state, account_info=account_info, portfolio=portfolio)
+        prompt = template(tech_sum=tech_sum, account_info=account_info, portfolio=portfolio)
         st.markdown(prompt)
         # 暂时返回模拟的建议结果
         reasoning_content, content = get_ai_recommendation(prompt)
-        
         logger.info(f"投资建议: \n{content}")
         logger.info(f"推理内容: \n{reasoning_content}")
         return reasoning_content, content
@@ -228,8 +237,13 @@ def show_investment_advice(account_id):
             end_date = datetime.today().strftime('%Y-%m-%d')
             start_date = (datetime.today() - timedelta(days=100)).strftime('%Y-%m-%d')
             stock_name, indicator, last_price, basic_data = st_ana.get_market_place(stock_code, start_date, end_date)
+            account_info, portfolio = get_portfolio_info(account_id)
+            res = f"当前未持仓股票"
+            for item in portfolio['positions']:
+                if item['code'] == stock_code:
+                    res = f"当前持仓: {item['quantity']} 股，成本: {item['price']}， 现价: {item['value']}"
             template = Template.from_file("prompts/stock_prompt.jinja")
-            prompt = template(stock_name=stock_name, indicator=indicator, basic_data=basic_data, last_price=last_price)
+            prompt = template(stock_name=stock_name, indicator=indicator, basic_data=basic_data, last_price=last_price, positions=res)
             reasoning_content, content = get_ai_recommendation(prompt)
             st.session_state.basic_data = basic_data
             st.session_state.stock_advice = content

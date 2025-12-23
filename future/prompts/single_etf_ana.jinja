@@ -1,0 +1,35 @@
+{# 入参说明（必须全部提供）：
+   - stock_code: str, 股票名称
+   - last_price: float, 上次价格
+   - indicator: dict, 包含所有技术指标(ema_5,ema_10,ema_20,macd,macdsignal,macdhist,slowk,slowd,slowj,rsi_14,volume)
+#}
+
+请基于提供的股票技术指标，总结分析{{ stock_code }}的当前技术面指标情况。
+
+# 技术指标
+- 当前价格：{{ "%.2f"|format(last_price) if last_price is not none else 'N/A' }}
+- 近10日EMA5日均线：{{ indicator['ema_5'] }}
+- 近10日EMA10日均线：{{ indicator['ema_10'] }}
+- 近10日EMA20日均线：{{ indicator['ema_20'] }}
+- 近10个DIF线：{{ indicator['macd'] }}
+- 近10个DEA线：{{ indicator['macdsignal'] }}
+- 近10个MACD柱：{{ indicator['macdhist'] }}
+- 近10个K线：{{ indicator['slowk'] }}
+- 近10个D线：{{ indicator['slowd'] }}
+- 近10个J线：{{ indicator['slowj'] }}
+- 近10个RSI线：{{ indicator['rsi_14'] }}
+- 近10个交易量：{{ indicator['volume'] }}
+
+**分析要求：**
+1.  **技术分析**：请综合评估以下技术指标序列的当前状态与近期趋势：
+    *   **价格与均线**：当前价格{{ last_price }}相对于其近10日的EMA5、EMA10、EMA20均线的位置关系。
+    *   **MACD指标**：分析近10个周期的DIF线、DEA线和MACD柱状图的数值变化，判断动量趋势。
+    *   **KDJ指标**：分析近10个周期的K线、D线和J线数值，评估超买超卖状态及交叉信号。
+    *   **RSI指标**：分析近10个周期的RSI线数值，判断强弱分界与背离情况。
+    *   **交易量**：观察近10个交易日的成交量变化，评估价格变动的支撑力度。
+
+**输出要求：**
+请将技术面的分析结论以如下结构化格式呈现：
+- **格式：** 严格仅输出一个JSON对象。
+- **内容：** JSON对象的键为'conclusion'，值是其对应的技术分析结论。
+- **举例：** {'conclusion': '技术面的综合分析'}

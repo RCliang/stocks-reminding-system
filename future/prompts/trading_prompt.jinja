@@ -1,5 +1,5 @@
 {# 入参说明（必须全部提供）：
-   - market_state: dict, 键为ETF代码，值为包含price、change_24h、indicators的字典
+   - tech_sum: dict, 键为ETF代码，值为技术指标分析的摘要
    - account_info: dict, 包含initial_capital、total_return
    - portfolio: dict, 包含total_value、cash、positions列表
    - positions列表元素为dict，包含name、code、quantity、value
@@ -34,10 +34,9 @@
     -   `justification`: 简要的决策理由，需引用相关技术指标或策略规则。
 - **范围：** 为所有在**市场数据**中出现的ETF生成决策，无论是否当前持仓。
 
-**市场数据如下:**
-{% for etf, data in market_state.items() %}
-  {{ etf }}: 最近收盘价:¥{{ "%.3f"|format(data['last_price']) }} 涨跌幅：({{ "%+.2f"|format(data['change_24h']) }}%) 当前价格：¥{{ "%.3f"|format(data['now_price']) }}
-  SMA5: ¥{{ "%.2f"|format(data['indicators'].get('sma_5', 0)) }}, SMA10: ¥{{ "%.2f"|format(data['indicators'].get('sma_10', 0)) }}, SMA20: ¥{{ "%.2f"|format(data['indicators'].get('sma_20', 0)) }}, RSI: {{ "%.1f"|format(data['indicators'].get('rsi_14', 0)) }}
+**市场技术指标分析如下:**
+{% for etf, data in tech_sum.items() %}
+  {{ etf }}: {{ data }}   
 {% endfor %}
 
 **账户状态如下:**
