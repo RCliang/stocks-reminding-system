@@ -1,9 +1,14 @@
 from typing import Any
 import streamlit as st
+from streamlit_lightweight_charts import renderLightweightCharts
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import logging
+import json
+import numpy as np
 import json_repair
+from datetime import datetime, timedelta
 import time
 from outlines import Template
 from pathlib import Path
@@ -11,8 +16,8 @@ from utils import get_ai_recommendation, search_stock_info
 from db_tools import DatabaseTools
 from fetch_kline_daily import get_market_snapshot
 from utils import StockAna
-from datetime import datetime, timedelta
-# 配置日志
+
+
 logger = logging.getLogger(__name__)
 
 def get_portfolio_info(account_id):
@@ -40,6 +45,419 @@ def get_portfolio_info(account_id):
         })
     return account_info, portfolio
 
+def generate_technical_indicator_chart(indicator):
+    COLOR_BULL = 'rgba(38,166,154,0.9)'  # #26a69a
+    COLOR_BEAR = 'rgba(239,83,80,0.9)'   # #ef5350
+    COLOR_BLUE = 'rgba(33,150,243,0.9)'  # #2196f3
+    COLOR_GREEN = 'rgba(76,175,80,0.9)'  # #4caf50
+    COLOR_RED = 'rgba(244,67,54,0.9)'    # #f44336
+    COLOR_PURPLE = 'rgba(156,39,176,0.9)' # #9c27b0
+    COLOR_ORANGE = 'rgba(255,152,0,0.9)' # #ff9800
+    
+    # 创建DataFrame存储所有数据
+    dates = pd.date_range(end='2023-12-25', periods=len(indicator['ema_5'])).astype(str).tolist()
+    df = pd.DataFrame({
+        'time': dates,
+        'ema_5': [round(float(v), 2) for v in indicator['ema_5']],
+        'ema_10': [round(float(v), 2) for v in indicator['ema_10']],
+        'ema_20': [round(float(v), 2) for v in indicator['ema_20']],
+        'macd': [round(float(v), 2) for v in indicator['macd']],
+        'macdsignal': [round(float(v), 2) for v in indicator['macdsignal']],
+        'macdhist': [round(float(v), 2) for v in indicator['macdhist']],
+        'slowk': [round(float(v), 2) for v in indicator['slowk']],
+        'slowd': [round(float(v), 2) for v in indicator['slowd']],
+        'slowj': [round(float(v), 2) for v in indicator['slowj']],
+        'rsi_14': [round(float(v), 2) for v in indicator['rsi_14']],
+        'volume': [round(float(v), 2) for v in indicator['volume']]
+    })
+    
+    # 1. EMA图表配置
+    chartEMAOptions = {
+        # "width": 800,
+        "height": 200,
+        "layout": {
+            "background": {
+                "type": "solid",
+                "color": 'white'
+            },
+            "textColor": "black"
+        },
+        "grid": {
+            "vertLines": {
+                "color": "rgba(197, 203, 206, 0.5)"
+            },
+            "horzLines": {
+                "color": "rgba(197, 203, 206, 0.5)"
+            }
+        },
+        "timeScale": {
+            "visible": True,
+            "borderColor": "rgba(197, 203, 206, 0.8)",
+            "barSpacing": 15
+        },
+        "watermark": {
+            "visible": True,
+            "fontSize": 18,
+            "horzAlign": 'left',
+            "vertAlign": 'top',
+            "color": 'rgba(171, 71, 188, 0.7)',
+            "text": 'EMA指标',
+        }
+    }
+    
+    # 2. MACD图表配置
+    chartMACDOptions = {
+        # "width": 800,
+        "height": 200,
+        "layout": {
+            "background": {
+                "type": "solid",
+                "color": 'white'
+            },
+            "textColor": "black"
+        },
+        "grid": {
+            "vertLines": {
+                "color": "rgba(197, 203, 206, 0.5)"
+            },
+            "horzLines": {
+                "color": "rgba(197, 203, 206, 0.5)"
+            }
+        },
+        "timeScale": {
+            "visible": False,
+            "borderColor": "rgba(197, 203, 206, 0.8)"
+        },
+        "watermark": {
+            "visible": True,
+            "fontSize": 18,
+            "horzAlign": 'left',
+            "vertAlign": 'top',
+            "color": 'rgba(171, 71, 188, 0.7)',
+            "text": 'MACD指标',
+        }
+    }
+    
+    # 3. KDJ图表配置
+    chartKDJOptions = {
+        # "width": 800,
+        "height": 200,
+        "layout": {
+            "background": {
+                "type": "solid",
+                "color": 'white'
+            },
+            "textColor": "black"
+        },
+        "grid": {
+            "vertLines": {
+                "color": "rgba(197, 203, 206, 0.5)"
+            },
+            "horzLines": {
+                "color": "rgba(197, 203, 206, 0.5)"
+            }
+        },
+        "timeScale": {
+            "visible": False,
+            "borderColor": "rgba(197, 203, 206, 0.8)"
+        },
+        "watermark": {
+            "visible": True,
+            "fontSize": 18,
+            "horzAlign": 'left',
+            "vertAlign": 'top',
+            "color": 'rgba(171, 71, 188, 0.7)',
+            "text": 'KDJ指标',
+        }
+    }
+    
+    # 4. RSI图表配置
+    chartRSIOptions = {
+        # "width": 800,
+        "height": 200,
+        "layout": {
+            "background": {
+                "type": "solid",
+                "color": 'white'
+            },
+            "textColor": "black"
+        },
+        "grid": {
+            "vertLines": {
+                "color": "rgba(197, 203, 206, 0.5)"
+            },
+            "horzLines": {
+                "color": "rgba(197, 203, 206, 0.5)"
+            }
+        },
+        "timeScale": {
+            "visible": False,
+            "borderColor": "rgba(197, 203, 206, 0.8)"
+        },
+        "watermark": {
+            "visible": True,
+            "fontSize": 18,
+            "horzAlign": 'left',
+            "vertAlign": 'top',
+            "color": 'rgba(171, 71, 188, 0.7)',
+            "text": 'RSI指标',
+        }
+    }
+    
+    # 5. 交易量图表配置
+    chartVolumeOptions = {
+        # "width": 800,
+        "height": 150,
+        "layout": {
+            "background": {
+                "type": "solid",
+                "color": 'white'
+            },
+            "textColor": "black"
+        },
+        "grid": {
+            "vertLines": {
+                "color": "rgba(197, 203, 206, 0.5)"
+            },
+            "horzLines": {
+                "color": "rgba(197, 203, 206, 0.5)"
+            }
+        },
+        "timeScale": {
+            "visible": False,
+            "borderColor": "rgba(197, 203, 206, 0.8)"
+        },
+        "watermark": {
+            "visible": True,
+            "fontSize": 18,
+            "horzAlign": 'left',
+            "vertAlign": 'top',
+            "color": 'rgba(171, 71, 188, 0.7)',
+            "text": '交易量',
+        }
+    }
+    
+    # 准备各指标数据格式
+    ema_5_data = json.loads(df.rename(columns={"ema_5": "value"}).to_json(orient="records"))
+    ema_10_data = json.loads(df.rename(columns={"ema_10": "value"}).to_json(orient="records"))
+    ema_20_data = json.loads(df.rename(columns={"ema_20": "value"}).to_json(orient="records"))
+    
+    macd_data = json.loads(df.rename(columns={"macd": "value"}).to_json(orient="records"))
+    macdsignal_data = json.loads(df.rename(columns={"macdsignal": "value"}).to_json(orient="records"))
+    df['color'] = np.where(df['macdhist'] > 0, COLOR_BULL, COLOR_BEAR)
+    macdhist_data = json.loads(df.rename(columns={"macdhist": "value"}).to_json(orient="records"))
+    
+    slowk_data = json.loads(df.rename(columns={"slowk": "value"}).to_json(orient="records"))
+    slowd_data = json.loads(df.rename(columns={"slowd": "value"}).to_json(orient="records"))
+    slowj_data = json.loads(df.rename(columns={"slowj": "value"}).to_json(orient="records"))
+    
+    rsi_14_data = json.loads(df.rename(columns={"rsi_14": "value"}).to_json(orient="records"))
+    volume_data = json.loads(df.rename(columns={"volume": "value"}).to_json(orient="records"))
+    
+    # 创建超买超卖线数据
+    df['overbought_80'] = 80
+    df['oversold_20'] = 20
+    df['overbought_70'] = 70
+    df['oversold_30'] = 30
+    
+    overbought_80_data = json.loads(df.rename(columns={"overbought_80": "value"}).to_json(orient="records"))
+    oversold_20_data = json.loads(df.rename(columns={"oversold_20": "value"}).to_json(orient="records"))
+    overbought_70_data = json.loads(df.rename(columns={"overbought_70": "value"}).to_json(orient="records"))
+    oversold_30_data = json.loads(df.rename(columns={"oversold_30": "value"}).to_json(orient="records"))
+    
+    # 定义各图表系列
+    seriesEMA = [
+        {
+            "type": 'Line',
+            "data": ema_5_data,
+            "options": {
+                "color": COLOR_BLUE,
+                "lineWidth": 2,
+                "crosshairMarkerVisible": False,
+                "title": 'EMA5'
+            }
+        },
+        {
+            "type": 'Line',
+            "data": ema_10_data,
+            "options": {
+                "color": COLOR_GREEN,
+                "lineWidth": 2,
+                "crosshairMarkerVisible": False,
+                "title": 'EMA10'
+            }
+        },
+        {
+            "type": 'Line',
+            "data": ema_20_data,
+            "options": {
+                "color": COLOR_RED,
+                "lineWidth": 2,
+                "crosshairMarkerVisible": False,
+                "title": 'EMA20'
+            }
+        }
+    ]
+    
+    seriesMACD = [
+        {
+            "type": 'Line',
+            "data": macd_data,
+            "options": {
+                "color": COLOR_BLUE,
+                "lineWidth": 2,
+                "crosshairMarkerVisible": False,
+                "title": 'MACD'
+            }
+        },
+        {
+            "type": 'Line',
+            "data": macdsignal_data,
+            "options": {
+                "color": COLOR_RED,
+                "lineWidth": 2,
+                "crosshairMarkerVisible": False,
+                "title": 'Signal'
+            }
+        },
+        {
+            "type": 'Histogram',
+            "data": macdhist_data,
+            "options": {
+                "color": 'rgba(255,0,0,0.7)',
+                "lineWidth": 1,
+                "title": 'Histogram'
+            }
+        }
+    ]
+    
+    seriesKDJ = [
+        {
+            "type": 'Line',
+            "data": slowk_data,
+            "options": {
+                "color": COLOR_BLUE,
+                "lineWidth": 2,
+                "crosshairMarkerVisible": False,
+                "title": 'K'
+            }
+        },
+        {
+            "type": 'Line',
+            "data": slowd_data,
+            "options": {
+                "color": COLOR_RED,
+                "lineWidth": 2,
+                "crosshairMarkerVisible": False,
+                "title": 'D'
+            }
+        },
+        {
+            "type": 'Line',
+            "data": slowj_data,
+            "options": {
+                "color": COLOR_GREEN,
+                "lineWidth": 2,
+                "crosshairMarkerVisible": False,
+                "title": 'J'
+            }
+        },
+        {
+            "type": 'Line',
+            "data": overbought_80_data,
+            "options": {
+                "color": "rgba(197, 203, 206, 0.8)",
+                "lineWidth": 1,
+                "lineStyle": 2,  # 虚线
+                "crosshairMarkerVisible": False,
+                "title": 'Overbought (80)'
+            }
+        },
+        {
+            "type": 'Line',
+            "data": oversold_20_data,
+            "options": {
+                "color": "rgba(197, 203, 206, 0.8)",
+                "lineWidth": 1,
+                "lineStyle": 2,  # 虚线
+                "crosshairMarkerVisible": False,
+                "title": 'Oversold (20)'
+            }
+        }
+    ]
+    
+    seriesRSI = [
+        {
+            "type": 'Line',
+            "data": rsi_14_data,
+            "options": {
+                "color": COLOR_PURPLE,
+                "lineWidth": 2,
+                "crosshairMarkerVisible": False,
+                "title": 'RSI14'
+            }
+        },
+        {
+            "type": 'Line',
+            "data": overbought_70_data,
+            "options": {
+                "color": "rgba(197, 203, 206, 0.8)",
+                "lineWidth": 1,
+                "lineStyle": 2,  # 虚线
+                "crosshairMarkerVisible": False,
+                "title": 'Overbought (70)'
+            }
+        },
+        {
+            "type": 'Line',
+            "data": oversold_30_data,
+            "options": {
+                "color": "rgba(197, 203, 206, 0.8)",
+                "lineWidth": 1,
+                "lineStyle": 2,  # 虚线
+                "crosshairMarkerVisible": False,
+                "title": 'Oversold (30)'
+            }
+        }
+    ]
+    
+    seriesVolume = [
+        {
+            "type": 'Histogram',
+            "data": volume_data,
+            "options": {
+                "color": COLOR_ORANGE,
+                "lineWidth": 1,
+                "title": 'Volume'
+            }
+        }
+    ]
+    
+    # 返回图表配置列表
+    charts = [
+        {
+            "chart": chartEMAOptions,
+            "series": seriesEMA
+        },
+        {
+            "chart": chartMACDOptions,
+            "series": seriesMACD
+        },
+        {
+            "chart": chartKDJOptions,
+            "series": seriesKDJ
+        },
+        {
+            "chart": chartRSIOptions,
+            "series": seriesRSI
+        },
+        {
+            "chart": chartVolumeOptions,
+            "series": seriesVolume
+        }
+    ]
+    
+    return charts
 
 def generate_investment_recommendations(account_id):
     """
@@ -254,12 +672,16 @@ def show_investment_advice(account_id):
             st.write(st.session_state.basic_data)
         else:
             st.info("点击获取个股建议")
-    
+    # 技术指标展示
     with stock_tabs[1]:
-        if "indicator" in st.session_state:
-            st.write(st.session_state.indicator)
+        if 'indicator' in st.session_state and st.session_state.indicator != {}:
+            st.subheader("技术指标图表")
+            # 调用函数生成图表配置
+            charts_data = generate_technical_indicator_chart(st.session_state.indicator)
+            # 使用renderLightweightCharts渲染图表
+            renderLightweightCharts(charts_data, 'technical_indicators')
         else:
-            st.info("点击获取个股建议")
+            st.info("请在'投资建议'标签页点击'获取个股建议'按钮获取技术指标")
     
     with stock_tabs[2]:
         if "stock_advice" in st.session_state:
